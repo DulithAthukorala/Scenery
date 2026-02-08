@@ -1,6 +1,13 @@
-import google.generativeai as genai
+from google import genai
 from backend.config import GEMINI_API_KEY
 
-genai.configure(api_key=GEMINI_API_KEY)
+client = genai.Client(api_key=GEMINI_API_KEY)
 
-model = genai.GenerativeModel("gemini-1.5-flash")
+MODEL_NAME = "models/gemini-2.5-flash"
+
+def generate_text(prompt: str) -> str:
+    resp = client.models.generate_content(
+        model=MODEL_NAME,
+        contents=prompt,
+    )
+    return resp.text or ""
