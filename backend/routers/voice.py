@@ -1,11 +1,14 @@
-from fastapi import APIRouter
-from backend.models import model
+from fastapi import APIRouter, HTTPException
+from backend.models import generate_text
 
 router = APIRouter(prefix="/voice", tags=["voice"])
 
 @router.post("/ask")
 def ask_llm(prompt: str):
-    response = model.generate_content(prompt)
-    return {
-        "response": response.text
-    }
+    try:
+        text = generate_text(prompt)
+        if not text:
+            raise ValueError("Empty response from Gemini")
+        return {"response": text}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=repr(e))
