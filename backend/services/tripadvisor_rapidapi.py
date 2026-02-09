@@ -1,3 +1,6 @@
+"""
+Service for interacting with TripAdvisor's RapidAPI endpoints. This includes hotel search and other related functionality.
+"""
 from __future__ import annotations
 
 import httpx

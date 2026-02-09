@@ -1,3 +1,6 @@
+"""
+TripAdvisor endpoints. This includes hotel search and other related functionality.
+"""
 from __future__ import annotations
 
 from datetime import date

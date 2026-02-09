@@ -1,3 +1,6 @@
+"""
+Voice endpoint. This endpoint takes a prompt and returns a response from Gemini.
+"""
 from fastapi import APIRouter, HTTPException
 from backend.models import generate_text
 
