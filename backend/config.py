@@ -12,3 +12,13 @@ LOG_LEVEL = os.getenv("LOG_LEVEL", "info") # how noisy the logs should be (debug
 
 if not GEMINI_API_KEY:
     raise RuntimeError(f"GEMINI_API_KEY is not set (loaded from: {ENV_PATH})")
+
+
+RAPIDAPI_KEY = os.getenv("RAPIDAPI_KEY")
+RAPIDAPI_HOST = os.getenv("RAPIDAPI_HOST")
+
+if not RAPIDAPI_KEY or not RAPIDAPI_HOST:
+    raise RuntimeError(f"RapidAPI creds missing. Loaded from: {ENV_PATH}")
+
+
+

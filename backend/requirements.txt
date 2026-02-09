@@ -4,3 +4,5 @@ pydantic==2.5.3
 pydantic-settings==2.1.0
 python-dotenv==1.0.0
 python-multipart==0.0.6google-generativeai
+httpx==0.28.1
+
