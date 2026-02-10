@@ -3,9 +3,9 @@ Service for interacting with TripAdvisor's RapidAPI endpoints. This includes hot
 """
 from __future__ import annotations
 
-import httpx
+import httpx # Async HTTP client library(for fast API calls to RapidAPI)
 from datetime import date
-from typing import Optional, List, Tuple, Any, Dict
+from typing import Optional, List, Tuple, Any, Dict, Union
 
 from backend.config import RAPIDAPI_KEY, RAPIDAPI_HOST
 
@@ -13,10 +13,10 @@ BASE_URL = "https://tripadvisor16.p.rapidapi.com"
 
 
 class RapidAPIError(RuntimeError):
-    """Raised when RapidAPI returns a non-2xx response."""
+    """Raised when RapidAPI returns a non-2xx(unsuccessful) response."""
 
     def __init__(self, status_code: int, message: str, payload: Any = None):
-        super().__init__(message)
+        super().__init__(message) # RuntimeError.__init__(message)
         self.status_code = status_code
         self.payload = payload
 
@@ -30,7 +30,7 @@ def _headers() -> Dict[str, str]:
     return {
         "X-RapidAPI-Key": RAPIDAPI_KEY,
         "X-RapidAPI-Host": RAPIDAPI_HOST,
-        "Accept": "application/json",
+        "Accept": "application/json", # Ensure we get JSON responses
     }
 
 
@@ -43,7 +43,7 @@ def _build_params(
     geoId: str,
     checkIn: date,
     checkOut: date,
-    pageNumber: int,
+    pageNumber: int, # Not to have abc, later converted to str
     sort: str,
     adults: int,
     rooms: int,
@@ -70,7 +70,7 @@ def _build_params(
         ("geoId", geoId),
         ("checkIn", _iso(checkIn)),
         ("checkOut", _iso(checkOut)),
-        ("pageNumber", str(pageNumber)),
+        ("pageNumber", str(pageNumber)), 
         ("sort", sort),
         ("adults", str(adults)),
         ("rooms", str(rooms)),
@@ -88,22 +88,37 @@ def _build_params(
         for age in childrenAges:
             params.append(("childrenAges", str(age)))
 
-    def add_list(key: str, values: Optional[List[str]]):
-        if values:
-            for v in values:
-                params.append((key, v))
+    def add_csv(key: str, values: Optional[Union[list[str], str]]):
+        """
+        Accepts:
+        - ["pool", "wifi"]
+        - "pool,wifi"
 
-    add_list("amenity", amenity)
-    add_list("neighborhood", neighborhood)
-    add_list("deals", deals)
-    add_list("type", type_)
-    add_list("class", class_)
-    add_list("style", style)
-    add_list("brand", brand)
+        Normalizes → "pool,wifi"
+        """
+        if not values:
+            return
+
+        if isinstance(values, str):
+            items = [v.strip() for v in values.split(",") if v.strip()]
+        else:
+            items = [v.strip() for v in values if v.strip()]
+
+        if items:
+            params.append((key, ",".join(items)))
+
+    add_csv("amenity", amenity)
+    add_csv("neighborhood", neighborhood)
+    add_csv("deals", deals)
+    add_csv("type", type_)
+    add_csv("class", class_)
+    add_csv("style", style)
+    add_csv("brand", brand)
 
     return params
 
-
+# async def bcz await is being used inside
+# * -> search_hotels(geoID=...,) not searchHotels(...,)
 async def search_hotels(
     *,
     geoId: str,
@@ -128,9 +143,7 @@ async def search_hotels(
 ) -> Dict[str, Any]:
     """
     Calls:
-      GET https://tripadvisor16.p.rapidapi.com/api/v1/hotels/searchHotels
-
-    Dates are sent as YYYY-MM-DD (ISO), per your working curl.
+      GET https://tripadvisor16.p.rapidapi.com/api/v1/hotels/searchHotels.
     """
     url = f"{BASE_URL}/api/v1/hotels/searchHotels"
     params = _build_params(
@@ -155,7 +168,7 @@ async def search_hotels(
         brand=brand,
     )
 
-    async with httpx.AsyncClient(timeout=30) as client:
+    async with httpx.AsyncClient(timeout=30) as client: # create async client with 30s timeout & close
         r = await client.get(url, headers=_headers(), params=params)
 
     if r.status_code >= 400:
