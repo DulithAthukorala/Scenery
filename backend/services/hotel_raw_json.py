@@ -3,7 +3,8 @@ Service for interacting with TripAdvisor's RapidAPI endpoints. This includes hot
 """
 from __future__ import annotations
 
-import httpx # Async HTTP client library(for fast API calls to RapidAPI)
+import httpx  # Async HTTP client library(for fast API calls to RapidAPI)
+import time  # caching timestamps
 from datetime import date
 from typing import Optional, List, Tuple, Any, Dict, Union
 
@@ -12,11 +13,47 @@ from backend.config import RAPIDAPI_KEY, RAPIDAPI_HOST
 BASE_URL = "https://tripadvisor16.p.rapidapi.com"
 
 
+# ----------------------------
+# Simple in-memory cache (Phase 1)
+# ----------------------------
+# NOTE: This cache is per-process (if you run multiple workers, each has its own cache)
+# TTL controls how long we reuse RapidAPI results for identical params.
+_CACHE: Dict[str, Tuple[float, Dict[str, Any]]] = {}
+CACHE_TTL_SECONDS = 15 * 60  # 15 minutes
+
+
+def _cache_key(url: str, params: List[Tuple[str, str]]) -> str:
+    """
+    Build a stable cache key from url + sorted params.
+    Sorting makes the key independent of param order.
+    """
+    normalized = "&".join(f"{k}={v}" for k, v in sorted(params))
+    return f"{url}?{normalized}"
+
+
+def _get_cached(key: str) -> Optional[Dict[str, Any]]:
+    entry = _CACHE.get(key)
+    if not entry:
+        return None
+
+    ts, data = entry
+    if time.time() - ts > CACHE_TTL_SECONDS:
+        # expired
+        del _CACHE[key]
+        return None
+
+    return data
+
+
+def _set_cache(key: str, data: Dict[str, Any]) -> None:
+    _CACHE[key] = (time.time(), data)
+
+
 class RapidAPIError(RuntimeError):
     """Raised when RapidAPI returns a non-2xx(unsuccessful) response."""
 
     def __init__(self, status_code: int, message: str, payload: Any = None):
-        super().__init__(message) # RuntimeError.__init__(message)
+        super().__init__(message)  # RuntimeError.__init__(message)
         self.status_code = status_code
         self.payload = payload
 
@@ -30,7 +67,7 @@ def _headers() -> Dict[str, str]:
     return {
         "X-RapidAPI-Key": RAPIDAPI_KEY,
         "X-RapidAPI-Host": RAPIDAPI_HOST,
-        "Accept": "application/json", # Ensure we get JSON responses
+        "Accept": "application/json",  # Ensure we get JSON responses
     }
 
 
@@ -43,7 +80,7 @@ def _build_params(
     geoId: str,
     checkIn: date,
     checkOut: date,
-    pageNumber: int, # Not to have abc, later converted to str
+    pageNumber: int,  # Not to have abc, later converted to str
     sort: str,
     adults: int,
     rooms: int,
@@ -55,10 +92,10 @@ def _build_params(
     amenity: Optional[List[str]],
     neighborhood: Optional[List[str]],
     deals: Optional[List[str]],
-    type_: Optional[List[str]],
+    type_: Optional[List[str]], 
     class_: Optional[List[str]],
     style: Optional[List[str]],
-    brand: Optional[List[str]],
+    brand: Optional[List[str]], # hotel chains like Hilton, Marriott
 ) -> List[Tuple[str, str]]:
     """
     Build params as list-of-tuples so arrays are sent as repeated query keys:
@@ -70,7 +107,7 @@ def _build_params(
         ("geoId", geoId),
         ("checkIn", _iso(checkIn)),
         ("checkOut", _iso(checkOut)),
-        ("pageNumber", str(pageNumber)), 
+        ("pageNumber", str(pageNumber)),
         ("sort", sort),
         ("adults", str(adults)),
         ("rooms", str(rooms)),
@@ -116,6 +153,7 @@ def _build_params(
     add_csv("brand", brand)
 
     return params
+
 
 # async def bcz await is being used inside
 # * -> search_hotels(geoID=...,) not searchHotels(...,)
@@ -168,7 +206,15 @@ async def search_hotels(
         brand=brand,
     )
 
-    async with httpx.AsyncClient(timeout=30) as client: # create async client with 30s timeout & close
+    # ----------------------------
+    # Cache lookup (same params → instant)
+    # ----------------------------
+    cache_key = _cache_key(url, params)
+    cached = _get_cached(cache_key)
+    if cached is not None:
+        return cached
+
+    async with httpx.AsyncClient(timeout=30) as client:  # create async client with 30s timeout & close
         r = await client.get(url, headers=_headers(), params=params)
 
     if r.status_code >= 400:
@@ -184,4 +230,11 @@ async def search_hotels(
             payload=payload,
         )
 
-    return r.json()
+    data = r.json()
+
+    # ----------------------------
+    # Cache set
+    # ----------------------------
+    _set_cache(cache_key, data)
+
+    return data
