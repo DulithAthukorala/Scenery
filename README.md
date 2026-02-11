@@ -379,6 +379,7 @@ results = db.execute(query, ("Galle", 15000))
 - Indexed on `city` and `price_lkr` (fast lookup)
 - Returns 24 hotels in Galle under 15,000 LKR
 - **Time: 10-30ms**
+<!--
 
 **Alternative: RapidAPI Path (if dates specified)**
 ```python
@@ -395,8 +396,11 @@ response = await rapidapi.get(
 )
 # Time: 500-2000ms (variable, network dependent)
 ```
+-->
 
 #### Phase 6: LLM Ranking (850-1350ms)
+<!--
+
 ```python
 # Gemini 2.5 Flash prompt (will change)
 prompt = f"""
@@ -427,7 +431,7 @@ async for chunk in gemini.stream(prompt, response_format="json"):
     # First token at 200-300ms
     # Full response at 500-800ms
 ```
-
+-->
 **What Happens:**
 - Pre-filter to top 10 hotels (don't send all 24 to LLM)
 - Gemini ranks based on user query context
