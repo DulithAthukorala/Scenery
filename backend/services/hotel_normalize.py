@@ -1,3 +1,6 @@
+"""
+Normalize the TripAdvisor API response into a small, LLM-friendly list of hotels with Details
+"""
 from __future__ import annotations
 
 from typing import Any, Dict, List, Optional
@@ -8,21 +11,23 @@ def _safe_get(d: dict, path: list[str], default=None):
     for k in path:
         if not isinstance(cur, dict) or k not in cur:
             return default
-        cur = cur[k]
+        cur = cur[k] # cur["bubbleRating"] -> cur["rating"]
     return cur
 
 
-def normalize_tripadvisor_hotels(raw: Dict[str, Any], limit: int = 15) -> List[Dict[str, Any]]:
+def normalize_tripadvisor_hotels(raw: Dict[str, Any], limit: int = 10) -> List[Dict[str, Any]]:
     """
     Turn the giant RapidAPI response into a small, LLM-friendly list.
     Keep only what helps ranking and explanation.
     """
-    data = raw.get("data") or raw.get("data", {})
-    hotels = data.get("data") if isinstance(data, dict) else raw.get("data", [])
+
+    # Data Retrieval For TripAdvisor API
+    data = raw.get("data") or raw.get("data", {}) # handle "data": null / 0 etc
+    hotels = data.get("data") if isinstance(data, dict) else raw.get("data", []) # handle nested "data" Dicts
     if not isinstance(hotels, list):
         hotels = []
 
-    out: List[Dict[str, Any]] = []
+    out: List[Dict[str, Any]] = [] # [{"title": "Hotel A", "rating": 4.5, "price": 30000},]
 
     for h in hotels[:limit]:
         if not isinstance(h, dict):
@@ -35,9 +40,6 @@ def normalize_tripadvisor_hotels(raw: Dict[str, Any], limit: int = 15) -> List[D
         provider = h.get("provider")
         is_sponsored = h.get("isSponsored")
 
-        # sometimes there are coordinates / address fields (varies by endpoint)
-        primary = h.get("primaryInfo")
-        secondary = h.get("secondaryInfo")
 
         out.append(
             {
@@ -46,8 +48,6 @@ def normalize_tripadvisor_hotels(raw: Dict[str, Any], limit: int = 15) -> List[D
                 "reviews": reviews,
                 "price": price,
                 "provider": provider,
-                "primaryInfo": primary,
-                "secondaryInfo": secondary,
                 "isSponsored": is_sponsored,
             }
         )
