@@ -25,6 +25,7 @@ data/*.csv
 !data/hotels_template.csv
 data/*.json
 !data/sample_hotels.json
+backend/data/
 
 # Logs
 *.log
