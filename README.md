@@ -478,7 +478,6 @@ async def chat(request: ChatRequest):
 ### Prerequisites
 
 - Python 3.11 or higher
-- Docker (optional, recommended)
 - ElevenLabs API key
 - Google Gemini API key
 - RapidAPI key (TripAdvisor)
@@ -548,7 +547,10 @@ uvicorn main:app --reload --host 0.0.0.0 --port 8000
 uvicorn main:app --workers 4 --host 0.0.0.0 --port 8000
 ```
 
-### Running with Docker
+### Running with Docker (Planned)
+
+*Docker support is planned for future releases. The expected setup will be:*
+
 ```bash
 # Build the image
 docker build -t scenery:latest .
@@ -563,6 +565,8 @@ docker run -d \
 # View logs
 docker logs -f scenery
 ```
+
+Expected outcome: Simplified deployment with containerization for consistent environments.
 
 ### Testing the API
 ```bash
@@ -914,137 +918,40 @@ INSERT INTO hotels (
 
 ## Deployment
 
-### Docker Deployment
+*Note: This project is currently a work-in-progress. The deployment strategy outlined below represents the planned production architecture.*
 
-**Dockerfile:**
-```dockerfile
-FROM python:3.11-slim
+### Planned Deployment Strategy
 
-WORKDIR /app
+**Containerization with Docker:**
+- Application will be containerized using Docker for consistent deployment across environments
+- Multi-container setup using Docker Compose for the main application and supporting services (Redis for caching)
+- Expected outcome: Simplified deployment process and environment consistency
 
-# Install system dependencies
-RUN apt-get update && apt-get install -y \
-    gcc \
-    && rm -rf /var/lib/apt/lists/*
+**Cloud Infrastructure (AWS):**
+- **Compute**: EC2 instance (t3.medium or similar) for running the containerized application
+  - Expected: 99.9% uptime with proper monitoring and auto-restart configurations
+- **Storage**: S3 for static assets like hotel images
+  - Expected: Fast CDN-backed delivery of images to reduce latency
+- **Load Balancing**: Nginx reverse proxy for routing and SSL termination
+  - Expected: Secure HTTPS connections with Let's Encrypt certificates
 
-# Copy requirements
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+**Expected Deployment Workflow:**
+1. Build Docker containers with all dependencies
+2. Deploy to EC2 instance via Docker Compose
+3. Configure reverse proxy for routing and security
+4. Set up SSL certificates for secure connections
+5. Configure monitoring and logging
 
-# Download spaCy model
-RUN python -m spacy download en_core_web_sm
+**Expected Performance:**
+- Cold start time: 30-45 seconds for full application startup
+- Steady-state memory usage: ~2-3GB with 4 workers
+- Request handling capacity: 50-100 concurrent requests with t3.medium instance
+- Image serving: < 200ms via S3 CloudFront CDN
 
-# Copy application
-COPY . .
-
-# Expose port
-EXPOSE 8000
-
-# Run application
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "4"]
-```
-
-**docker-compose.yml:**
-```yaml
-version: '3.8'
-
-services:
-  scenery:
-    build: .
-    ports:
-      - "8000:8000"
-    environment:
-      - ELEVENLABS_API_KEY=${ELEVENLABS_API_KEY}
-      - GEMINI_API_KEY=${GEMINI_API_KEY}
-      - RAPIDAPI_KEY=${RAPIDAPI_KEY}
-    volumes:
-      - ./hotels.db:/app/hotels.db
-      - ./logs:/app/logs
-    restart: unless-stopped
-    
-  redis:
-    image: redis:7-alpine
-    ports:
-      - "6379:6379"
-    volumes:
-      - redis-data:/data
-    restart: unless-stopped
-
-volumes:
-  redis-data:
-```
-
-### AWS EC2 Deployment
-```bash
-# 1. Launch EC2 instance (t3.medium recommended)
-# Ubuntu 22.04 LTS, 2 vCPU, 4GB RAM
-
-# 2. SSH into instance
-ssh -i your-key.pem ubuntu@ec2-xx-xx-xx-xx.compute.amazonaws.com
-
-# 3. Install Docker
-curl -fsSL https://get.docker.com -o get-docker.sh
-sudo sh get-docker.sh
-sudo usermod -aG docker ubuntu
-
-# 4. Clone repository
-git clone https://github.com/DulithAthukorala/Scenery.git
-cd Scenery
-
-# 5. Create .env file
-nano .env
-# Add your API keys
-
-# 6. Run with Docker Compose
-docker-compose up -d
-
-# 7. Configure Nginx reverse proxy (optional)
-sudo apt install nginx
-sudo nano /etc/nginx/sites-available/scenery
-
-# Nginx config:
-# server {
-#     listen 80;
-#     server_name your-domain.com;
-#     
-#     location / {
-#         proxy_pass http://localhost:8000;
-#         proxy_http_version 1.1;
-#         proxy_set_header Upgrade $http_upgrade;
-#         proxy_set_header Connection "upgrade";
-#         proxy_set_header Host $host;
-#     }
-# }
-
-sudo ln -s /etc/nginx/sites-available/scenery /etc/nginx/sites-enabled/
-sudo nginx -t
-sudo systemctl restart nginx
-
-# 8. Setup SSL with Let's Encrypt
-sudo apt install certbot python3-certbot-nginx
-sudo certbot --nginx -d your-domain.com
-```
-
-### AWS S3 for Hotel Images
-```python
-# Upload hotel images to S3
-import boto3
-
-s3 = boto3.client('s3')
-
-def upload_hotel_image(hotel_id, image_path):
-    bucket = 'scenery-hotel-images'
-    key = f'hotels/{hotel_id}/{image_path}'
-    
-    s3.upload_file(
-        image_path,
-        bucket,
-        key,
-        ExtraArgs={'ContentType': 'image/jpeg', 'ACL': 'public-read'}
-    )
-    
-    return f'https://{bucket}.s3.amazonaws.com/{key}'
-```
+**Scalability Considerations:**
+- Horizontal scaling possible via load balancer and multiple EC2 instances
+- Database can be migrated to RDS for better reliability
+- Redis cluster for distributed caching in multi-instance setup
 
 ---
 
@@ -1140,20 +1047,22 @@ async def check_database():
 
 ## Roadmap
 
-### ✅ Phase 1: Core MVP (Current)
-- [x] Voice pipeline (STT → LLM → TTS)
+### 🚧 Phase 1: Core MVP (In Progress)
+- [x] Voice pipeline architecture (STT → LLM → TTS)
 - [x] Text chat mode
-- [x] Local database (150-200 hotels)
+- [x] Local database design (150-200 hotels)
 - [x] Basic conversation context
-- [x] Docker deployment
+- [ ] Docker containerization
+- [ ] Cloud deployment setup
 
-### 🚧 Phase 2: Production Ready (Next 4 weeks)
+### 📋 Phase 2: Production Ready (Planned)
 - [ ] Redis session management
 - [ ] Comprehensive error handling
 - [ ] Rate limiting and request queuing
 - [ ] Monitoring dashboard (Grafana)
 - [ ] Load testing (target: 100 concurrent users)
 - [ ] CI/CD pipeline (GitHub Actions)
+- [ ] Production deployment on AWS
 
 ### 📋 Phase 3: Enhanced Features (2-3 months)
 - [ ] Multi-turn conversation improvements
