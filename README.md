@@ -100,28 +100,28 @@ Demo will showcase:
 ### High-Level System Design
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│                        USER INTERFACE                        │
-│                    (Web/Mobile Client)                       │
+│                        USER INTERFACE                       │
+│                    (Web/Mobile Client)                      │
 └─────────────────────────────────────────────────────────────┘
                               │
                     WebSocket/WebRTC
                               │
 ┌─────────────────────────────────────────────────────────────┐
-│                     FASTAPI SERVER                           │
-│                    (Pipecat Pipeline)                        │
+│                     FASTAPI SERVER                          │
+│                    (Pipecat Pipeline)                       │
 ├─────────────────────────────────────────────────────────────┤
-│  ┌──────────────┐   ┌──────────────┐   ┌──────────────┐   │
-│  │  VAD + STT   │──→│ Normalization│──→│  LLM Ranking │   │
-│  │ (ElevenLabs) │   │  & Entities  │   │ (Gemini 2.0) │   │
-│  └──────────────┘   └──────────────┘   └──────────────┘   │
-│                              │                    │          │
-│                              ↓                    ↓          │
-│                      ┌──────────────┐    ┌──────────────┐  │
-│                      │  Local DB    │    │     TTS      │  │
-│                      │  (SQLite)    │    │ (ElevenLabs) │  │
-│                      └──────────────┘    └──────────────┘  │
-│                              │                               │
-│                              ↓                               │
+│  ┌──────────────┐   ┌──────────────┐   ┌──────────────┐     │
+│  │  VAD + STT   │──→│ Normalization│──→│  LLM Ranking │     │
+│  │ (ElevenLabs) │   │  & Entities  │   │(Gemini 2.5 F)│     │
+│  └──────────────┘   └──────────────┘   └──────────────┘     │
+│                              │                    │         │
+│                              ↓                    ↓         │
+│                      ┌──────────────┐    ┌──────────────┐   │
+│                      │  Local DB    │    │     TTS      │   │
+│                      │  (SQLite)    │    │ (ElevenLabs) │   │
+│                      └──────────────┘    └──────────────┘   │
+│                              │                              │
+│                              ↓                              │
 │                      ┌──────────────┐                       │
 │                      │  RapidAPI    │                       │
 │                      │ (TripAdvisor)│                       │
@@ -135,7 +135,7 @@ Demo will showcase:
                     └──────────────────┘
 ```
 
-### Pipeline Flow
+### Pipeline Flow & Expected Latency
 
 #### Voice Mode Pipeline
 ```
@@ -144,7 +144,7 @@ Entity Extraction → Context Resolution → DB Query Decision →
 [Local DB OR RapidAPI] → LLM Ranking (Gemini) → Response Generation → 
 TTS (ElevenLabs) → Audio Streaming → User Hears Response
 
-Total Time: 850ms - 1.2s (P50)
+Expected Latency: 850ms - 1.2s (P50)
 ```
 
 #### Text Mode Pipeline
@@ -153,7 +153,7 @@ User Text → Input Validation → Normalization → Entity Extraction →
 Context Resolution → DB Query Decision → [Local DB OR RapidAPI] → 
 LLM Ranking (Gemini) → Formatted Response → User Sees Response
 
-Total Time: 400-600ms (P50)
+Expected Latency: 400-600ms (P50)
 ```
 
 ### Key Design Decisions
@@ -161,13 +161,13 @@ Total Time: 400-600ms (P50)
 **Why Local Database First?**
 - 90% of queries are exploratory ("show me hotels in X")
 - Live pricing not needed until booking intent
-- Reduces API costs from $0.50/query to $0.05/query
+- Reduces API costs
 - Enables 200-300ms faster responses
 
-**Why Gemini 2.0 Flash?**
+**Why Gemini 2.5 Flash?**
 - 50% faster than GPT-4 Turbo (300ms vs 600ms first token)
 - Native JSON mode for structured output
-- Lower cost ($0.10/1M tokens vs $5/1M for GPT-4)
+- Lower cost
 - Excellent reasoning for hotel ranking tasks
 
 **Why ElevenLabs for Both STT/TTS?**
@@ -183,8 +183,9 @@ Total Time: 400-600ms (P50)
 - Reduces custom audio processing code by 80%
 
 ---
+<!--
 
-## Performance Benchmarks
+## Expected Performance Benchmarks
 
 ### Latency Breakdown (Voice Mode - Typical Query)
 
@@ -229,7 +230,7 @@ Total Time: 400-600ms (P50)
 - *Estimates based on current API pricing and expected usage, subject to change*
 
 ---
-
+-->
 ## Technology Stack
 
 ### Core Framework
@@ -267,6 +268,8 @@ Total Time: 400-600ms (P50)
 ### Voice Mode: Detailed Pipeline
 
 #### Phase 1: Audio Capture & VAD (0-200ms)
+<!--
+
 ```python
 # Pipecat VAD configuration
 vad_config = {
@@ -276,7 +279,7 @@ vad_config = {
     'padding': 100               # 100ms buffer before/after
 }
 ```
-
+-->
 **What Happens:**
 - User speaks: "Show me hotels in Galle under 15,000 rupees"
 - Silero VAD detects speech start
@@ -285,6 +288,8 @@ vad_config = {
 - **Time: 150-200ms** after user stops speaking
 
 #### Phase 2: Speech-to-Text (200-650ms)
+<!--
+
 ```python
 # ElevenLabs STT streaming
 async for partial_transcript in elevenlabs_stt.stream(audio):
@@ -292,7 +297,7 @@ async for partial_transcript in elevenlabs_stt.stream(audio):
         # Start entity extraction early (parallel processing)
         entities = extract_entities(partial_transcript.text)
 ```
-
+-->
 **What Happens:**
 - Audio streamed to ElevenLabs Scribe
 - Partial results available at 200ms: "show me hotels..."
@@ -301,6 +306,8 @@ async for partial_transcript in elevenlabs_stt.stream(audio):
 - **Time: 300-450ms**
 
 #### Phase 3: Normalization & Entity Extraction (650-750ms)
+<!--
+
 ```python
 # Entity extraction with spaCy
 entities = {
@@ -318,7 +325,7 @@ entities = {
     "amenities": []
 }
 ```
-
+-->
 **What Happens:**
 - Text normalized: "15000 rupees" → 15000 LKR
 - Location resolved: "Galle" → lat/lng coordinates
@@ -326,6 +333,8 @@ entities = {
 - **Time: 20-50ms**
 
 #### Phase 4: Context Resolution & DB Decision (750-800ms)
+<!--
+
 ```python
 # Check conversation context
 if session.has_context():
@@ -340,6 +349,7 @@ else:
     # Specific dates = need live pricing → call API
     data_source = "rapidapi"
 ```
+-->
 
 **What Happens:**
 - Check Redis for session state
@@ -348,6 +358,8 @@ else:
 - **Time: 5-20ms**
 
 #### Phase 5: Database Query (800-850ms)
+<!--
+
 ```python
 # SQLite query (local DB path)
 query = """
@@ -361,7 +373,7 @@ results = db.execute(query, ("Galle", 15000))
 
 # Returns 24 hotels in 10-30ms
 ```
-
+-->
 **What Happens:**
 - Query local SQLite database
 - Indexed on `city` and `price_lkr` (fast lookup)
@@ -386,7 +398,7 @@ response = await rapidapi.get(
 
 #### Phase 6: LLM Ranking (850-1350ms)
 ```python
-# Gemini 2.0 Flash prompt
+# Gemini 2.5 Flash prompt (will change)
 prompt = f"""
 You are a hotel recommendation expert. Rank these hotels for the user.
 
@@ -424,6 +436,8 @@ async for chunk in gemini.stream(prompt, response_format="json"):
 - **Time: 300-500ms**
 
 #### Phase 7: Text-to-Speech (1350-1600ms)
+<!--
+
 ```python
 # ElevenLabs TTS streaming
 async for audio_chunk in elevenlabs_tts.stream(
@@ -436,13 +450,14 @@ async for audio_chunk in elevenlabs_tts.stream(
     # Stream to user immediately (no buffering)
     await websocket.send_audio(audio_chunk)
 ```
-
+-->
 **What Happens:**
 - TTS starts processing immediately (doesn't wait for full text)
 - First audio chunk ready at 150ms
 - User hears first words at **~850ms total pipeline time**
 - Full response plays over 20-30 seconds
 - **Time to first audio: 150-250ms**
+<!--
 
 ### Text Mode: Simplified Pipeline
 ```python
@@ -913,6 +928,7 @@ INSERT INTO hotels (
     'Luxury hotel with stunning ocean views and infinity pool overlooking the Indian Ocean.'
 );
 ```
+-->
 
 ---
 
@@ -954,6 +970,7 @@ INSERT INTO hotels (
 - Redis cluster for distributed caching in multi-instance setup
 
 ---
+<!--
 
 ## Monitoring
 
@@ -1042,6 +1059,7 @@ async def check_database():
         logger.error("Database health check failed", exc_info=e)
         return "disconnected"
 ```
+-->
 
 ---
 
@@ -1083,6 +1101,7 @@ async def check_database():
 - [ ] Voice biometrics for user identification
 
 ---
+<!--
 
 ## Contributing
 
@@ -1109,7 +1128,7 @@ Currently a solo project, but contributions are welcome! If you'd like to contri
 MIT License - see [LICENSE](LICENSE) file for details
 
 ---
-
+-->
 ## Acknowledgments
 
 - **Pipecat** - Voice AI pipeline framework
@@ -1132,8 +1151,7 @@ MIT License - see [LICENSE](LICENSE) file for details
 
 <div align="center">
 
-**Built with 🎤 to demonstrate voice AI engineering excellence**
+**voice AI engineering**
 
-Showcasing production-ready skills for teams building next-generation conversational AI products
 
 </div>
