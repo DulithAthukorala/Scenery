@@ -44,6 +44,8 @@ Scenery is a dual-mode conversational AI agent that helps users discover hotels 
 
 ### Target Performance Metrics
 
+*These are target performance goals for the fully optimized system:*
+
 | Metric | Voice Mode | Text Mode |
 |--------|------------|-----------|
 | **P50 Latency** | 850-1000ms | 400-550ms |
@@ -209,6 +211,8 @@ Total Time: 400-600ms (P50)
 
 ### Estimated Cost Analysis (per 1000 queries)
 
+*Based on current API pricing; actual costs may vary with usage patterns and provider pricing changes.*
+
 | Component | Voice Mode | Text Mode | Notes |
 |-----------|------------|-----------|-------|
 | STT (ElevenLabs) | $0.30 | - | ~30s audio avg |
@@ -222,6 +226,7 @@ Total Time: 400-600ms (P50)
 - 50K queries/month
 - 70% voice, 30% text
 - **Total: ~$65/month** (excluding RapidAPI for price checks)
+- *Estimates subject to change based on actual usage and API pricing*
 
 ---
 
