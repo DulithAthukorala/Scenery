@@ -3,11 +3,9 @@ from __future__ import annotations
 import json
 from typing import Any, Dict, List, Optional
 
-from backend.services.tripadvisor_rapidapi import search_hotels
+from backend.services.hotel_raw_json import search_hotels
 from backend.services.hotel_normalize import normalize_tripadvisor_hotels
 
-# ✅ use whatever Gemini client you already have working
-# If you're using google.genai (new SDK), import that.
 from google import genai
 from backend.config import GEMINI_API_KEY, GEMINI_MODEL  # add GEMINI_MODEL in config.py
 
@@ -97,7 +95,7 @@ async def get_hotel_insights(
     )
 
     # 2) Normalize
-    hotels = normalize_tripadvisor_hotels(raw, limit=15)
+    hotels = normalize_tripadvisor_hotels(raw, limit=10)
 
     # 3) Ask Gemini
     prompt = _build_prompt(hotels, user_request)
