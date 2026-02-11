@@ -42,7 +42,7 @@ Scenery is a dual-mode conversational AI agent that helps users discover hotels 
 - **🔄 Streaming architecture** - Progressive responses, no blocking waits
 - **🛡️ Production-ready error handling** - Graceful degradation, fallback strategies
 
-### Current Metrics
+### Target Performance Metrics
 
 | Metric | Voice Mode | Text Mode |
 |--------|------------|-----------|
@@ -56,7 +56,7 @@ Scenery is a dual-mode conversational AI agent that helps users discover hotels 
 
 ## Why This Project
 
-Built to demonstrate production-grade voice AI engineering skills for roles requiring conversational AI expertise (targeting companies like Sentiva/Altrium).
+Built to showcase production-grade voice AI engineering capabilities and conversational AI expertise for technical leadership and engineering roles in companies building innovative voice-first products.
 
 ### What This Demonstrates
 
@@ -207,7 +207,7 @@ Total Time: 400-600ms (P50)
 | Response Formatting | 10-20ms | Template-based rendering |
 | **Total (P50)** | **240-490ms** | **Target: <600ms** |
 
-### Cost Analysis (per 1000 queries)
+### Estimated Cost Analysis (per 1000 queries)
 
 | Component | Voice Mode | Text Mode | Notes |
 |-----------|------------|-----------|-------|
@@ -218,7 +218,7 @@ Total Time: 400-600ms (P50)
 | Infrastructure | $0.10 | $0.05 | EC2 compute, data transfer |
 | **Total** | **$1.55** | **$0.70** | Per 1000 queries |
 
-**Monthly Cost Estimate (10K users, 5 queries/user/month):**
+**Projected Monthly Cost (10K users, 5 queries/user/month):**
 - 50K queries/month
 - 70% voice, 30% text
 - **Total: ~$65/month** (excluding RapidAPI for price checks)
@@ -1216,8 +1216,8 @@ MIT License - see [LICENSE](LICENSE) file for details
 
 <div align="center">
 
-**Built with 🎤 for voice AI engineering roles**
+**Built with 🎤 to demonstrate voice AI engineering excellence**
 
-Targeting: [Sentiva/Altrium](https://www.sentiva.ai/) and similar companies building conversational AI products
+Showcasing production-ready skills for teams building next-generation conversational AI products
 
 </div>
