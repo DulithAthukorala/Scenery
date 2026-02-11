@@ -44,7 +44,7 @@ Scenery is a dual-mode conversational AI agent that helps users discover hotels 
 
 ### Target Performance Metrics
 
-*These are target performance goals for the fully optimized system:*
+*These are target performance goals for the fully optimized system (not yet achieved in current prototype):*
 
 | Metric | Voice Mode | Text Mode |
 |--------|------------|-----------|
@@ -58,7 +58,7 @@ Scenery is a dual-mode conversational AI agent that helps users discover hotels 
 
 ## Why This Project
 
-Built to showcase production-grade voice AI engineering capabilities and conversational AI expertise for technical leadership and engineering roles in companies building innovative voice-first products.
+Built to demonstrate understanding of production-grade voice AI engineering principles and conversational AI expertise for technical leadership and engineering roles in companies building innovative voice-first products.
 
 ### What This Demonstrates
 
@@ -211,7 +211,7 @@ Total Time: 400-600ms (P50)
 
 ### Estimated Cost Analysis (per 1000 queries)
 
-*Based on current API pricing; actual costs may vary with usage patterns and provider pricing changes.*
+*Theoretical calculations based on expected usage patterns for the target architecture, not measured production costs.*
 
 | Component | Voice Mode | Text Mode | Notes |
 |-----------|------------|-----------|-------|
@@ -226,7 +226,7 @@ Total Time: 400-600ms (P50)
 - 50K queries/month
 - 70% voice, 30% text
 - **Total: ~$65/month** (excluding RapidAPI for price checks)
-- *Estimates subject to change based on actual usage and API pricing*
+- *Estimates based on current API pricing and expected usage, subject to change*
 
 ---
 
@@ -1047,11 +1047,13 @@ async def check_database():
 
 ## Roadmap
 
+*Note: Items marked with [x] indicate prototype/proof-of-concept completion, not production-ready implementation.*
+
 ### 🚧 Phase 1: Core MVP (In Progress)
-- [x] Voice pipeline architecture (STT → LLM → TTS)
-- [x] Text chat mode
-- [x] Local database design (150-200 hotels)
-- [x] Basic conversation context
+- [x] Voice pipeline architecture design (STT → LLM → TTS)
+- [x] Text chat mode prototype
+- [x] Local database design (150-200 hotels schema)
+- [x] Basic conversation context handling
 - [ ] Docker containerization
 - [ ] Cloud deployment setup
 
