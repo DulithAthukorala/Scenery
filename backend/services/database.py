@@ -1,4 +1,6 @@
-# backend/services/database.py
+"""
+Database initialization and access functions.
+"""
 import json
 import sqlite3
 from pathlib import Path
@@ -8,37 +10,28 @@ DB_PATH = Path(__file__).resolve().parents[1] / "data" / "hotels.db"
 
 
 def get_conn() -> sqlite3.Connection:
-    """
-    Open a SQLite connection with pragmatic settings for web apps:
-    - WAL for better concurrency
-    - busy_timeout so concurrent reads/writes don't instantly fail
-    - Row factory for dict-like access
-    """
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
 
-    # check_same_thread=False helps when FastAPI runs with threads/workers.
+    # check_same_thread=False
+    # Allow SQLite to be use any thread in the same worker in FastAPI threadpool
     conn = sqlite3.connect(DB_PATH, check_same_thread=False)
-    conn.row_factory = sqlite3.Row
+    conn.row_factory = sqlite3.Row # row["name"] can be used instead of row[3]
 
-    # Pragmas (safe defaults for a small production app)
+    # Pragmas for future performance (if didin't move to Postgres etc)
     conn.execute("PRAGMA foreign_keys = ON;")
-    conn.execute("PRAGMA journal_mode = WAL;")
-    conn.execute("PRAGMA synchronous = NORMAL;")
-    conn.execute("PRAGMA temp_store = MEMORY;")
+    conn.execute("PRAGMA journal_mode = WAL;") # Better concurrency
+    conn.execute("PRAGMA synchronous = NORMAL;") # balanced speed and safety when writing
+    conn.execute("PRAGMA temp_store = MEMORY;") # Temp data in memory
     conn.execute("PRAGMA cache_size = -20000;")  # ~20MB cache
-    conn.execute("PRAGMA busy_timeout = 3000;")  # 3s wait if DB is locked
+    conn.execute("PRAGMA busy_timeout = 3000;")  # 3s wait if DB is locked without error
 
     return conn
 
 
 def init_db() -> None:
     """
-    Local hotel cache table.
-
-    We store both:
-    - "local" fields (city, district, coords, price_lkr, amenities, images...)
-    - RapidAPI-ish fields so you can seed DB from TripAdvisor responses:
-      primaryInfo, secondaryInfo, bubble rating, badge, isSponsored, etc.
+    Local hotel table.
+    (id, name, city are required. Other fields are optional and can be null)
     """
     with get_conn() as conn:
         conn.execute(
@@ -53,15 +46,10 @@ def init_db() -> None:
                 district TEXT,
                 address TEXT,
 
-                latitude REAL,
-                longitude REAL,
-
-                -- Local cached price (optional). Live prices come from RapidAPI when dates exist.
-                price_lkr INTEGER,
+                -- Local price Range (manual)
                 price_range TEXT,
 
                 -- Ratings
-                star_rating REAL,
                 avg_review REAL,
                 review_count INTEGER,
 
@@ -90,7 +78,7 @@ def init_db() -> None:
 
         # Helpful indexes for fast filtering/ranking
         conn.execute("CREATE INDEX IF NOT EXISTS idx_hotels_city ON hotels(city);")
-        conn.execute("CREATE INDEX IF NOT EXISTS idx_hotels_price ON hotels(price_lkr);")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_hotels_price ON hotels(price_range);")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_hotels_avg_review ON hotels(avg_review);")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_hotels_review_count ON hotels(review_count);")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_hotels_active ON hotels(active);")
