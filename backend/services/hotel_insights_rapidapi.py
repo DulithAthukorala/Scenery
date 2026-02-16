@@ -7,7 +7,7 @@ from backend.services.hotel_raw_json import search_hotels
 from backend.services.hotel_normalize import normalize_tripadvisor_hotels
 
 from google import genai
-from backend.config import GEMINI_API_KEY, GEMINI_MODEL  # add GEMINI_MODEL in config.py
+from backend.config import GEMINI_API_KEY, GEMINI_MODEL
 
 client = genai.Client(api_key=GEMINI_API_KEY)
 
@@ -25,7 +25,7 @@ USER REQUEST:
 {user_request}
 
 HOTEL CANDIDATES (JSON):
-{json.dumps(normalized_hotels, ensure_ascii=False)}
+{json.dumps(normalized_hotels, ensure_ascii=False)} # ensure_ascii=False to keep keep non-English chars as they are
 
 Return ONLY valid JSON with this exact schema:
 {{
