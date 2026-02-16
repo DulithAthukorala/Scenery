@@ -43,3 +43,5 @@ frontend/.env*.local
 
 # Misc
 *.faiss
+
+backend/ml/*.joblib
