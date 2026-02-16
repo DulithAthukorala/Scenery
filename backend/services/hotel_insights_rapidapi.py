@@ -1,53 +1,9 @@
 from __future__ import annotations
 
-import json
 from typing import Any, Dict, List, Optional
 
 from backend.services.hotel_raw_json import search_hotels
 from backend.services.hotel_normalize import normalize_tripadvisor_hotels
-
-from google import genai
-from backend.config import GEMINI_API_KEY, GEMINI_MODEL
-
-client = genai.Client(api_key=GEMINI_API_KEY)
-
-
-def _build_prompt(
-    normalized_hotels: List[Dict[str, Any]],
-    user_request: str,
-) -> str:
-    # Keep it strict: we want JSON back.
-    return f"""
-You are Scenery, a travel assistant.
-Given hotel candidates, rank them for the user's request.
-
-USER REQUEST:
-{user_request}
-
-HOTEL CANDIDATES (JSON):
-{json.dumps(normalized_hotels, ensure_ascii=False)} # ensure_ascii=False to keep keep non-English chars as they are
-
-Return ONLY valid JSON with this exact schema:
-{{
-  "top_picks": [
-    {{
-      "title": "string",
-      "rank": 1,
-      "why": ["reason1", "reason2", "reason3"],
-      "tradeoffs": ["tradeoff1", "tradeoff2"],
-      "confidence": 0.0
-    }}
-  ],
-  "quick_summary": "string",
-  "notes": ["string"]
-}}
-
-Rules:
-- Do NOT invent hotels not in the candidates list.
-- Prefer value (rating + price + reviews) unless user request says otherwise.
-- If some fields are missing, say so in tradeoffs/notes.
-- Keep "top_picks" to max 5.
-""".strip()
 
 
 async def get_hotel_insights(
@@ -71,8 +27,14 @@ async def get_hotel_insights(
     style: Optional[List[str]] = None,
     brand: Optional[List[str]] = None,
     user_request: str = "Find the best value hotel for me.",
+    limit: int = 10,
 ) -> Dict[str, Any]:
-    # 1) Call RapidAPI
+    """
+    Fetch hotels from RapidAPI and return normalized results.
+    user_request is accepted but not used for ranking.
+    """
+
+    # 1) Fetch live data
     raw = await search_hotels(
         geoId=geoId,
         checkIn=checkIn,
@@ -95,25 +57,15 @@ async def get_hotel_insights(
     )
 
     # 2) Normalize
-    hotels = normalize_tripadvisor_hotels(raw, limit=10)
-
-    # 3) Ask Gemini
-    prompt = _build_prompt(hotels, user_request)
-
-    resp = client.models.generate_content(
-        model=GEMINI_MODEL,
-        contents=prompt,
-    )
-
-    text = resp.text or ""
-    # best-effort JSON parse (LLMs sometimes add whitespace)
-    try:
-        insights = json.loads(text)
-    except Exception:
-        insights = {"raw": text, "parse_error": True}
+    hotels = normalize_tripadvisor_hotels(raw, limit=limit)
 
     return {
-        "insights": insights,
-        "candidates_used": hotels,
-        "meta": {"model": GEMINI_MODEL},
+        "source": "rapidapi",
+        "user_request": user_request,   # kept for API compatibility
+        "count": len(hotels),
+        "results": hotels,
+        "meta": {
+            "sort": sort,
+            "currency": currencyCode,
+        },
     }
