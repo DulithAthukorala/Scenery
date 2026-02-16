@@ -46,13 +46,26 @@ Scenery is a dual-mode conversational AI agent that helps users discover hotels 
 
 *These are target performance goals for the fully optimized system (not yet achieved in current prototype):*
 
-| Metric | Voice Mode | Text Mode |
-|--------|------------|-----------|
-| **P50 Latency** | 850-1000ms | 400-550ms |
-| **P90 Latency** | 1200-1500ms | 600-800ms |
-| **Time to First Audio** | 700-900ms | N/A |
-| **Database Coverage** | 150-200 hotels (Sri Lanka) | Same |
-| **Avg Response Length** | 20-30 seconds | 200-400 words |
+#### STANDARD MODE (Local DB - hotel info, locations, features)
+─────────────────────────────────────────────────────────────────
+
+                          Voice Mode          Text Mode
+Time to First Token       150-250ms           100-200ms
+Time to First Audio       600-800ms           N/A
+P50 Total Latency        850-1000ms          400-600ms
+P90 Total Latency        1200-1500ms         800-1000ms
+
+
+##### THINKING MODE (Live pricing via RapidAPI)
+─────────────────────────────────────────────────────────────────
+
+                          Voice Mode          Text Mode
+Time to First Token       800-1200ms          600-1000ms
+Time to First Audio       1500-2000ms         N/A
+P50 Total Latency        3500-4500ms         2500-3500ms
+P90 Total Latency        5500-7000ms         4500-6000ms
+
+
 
 ---
 
