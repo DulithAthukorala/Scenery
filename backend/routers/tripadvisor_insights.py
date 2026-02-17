@@ -5,7 +5,7 @@ from typing import Optional, List
 
 from fastapi import APIRouter, HTTPException, Query
 
-from backend.services.hotel_insights import get_hotel_insights
+from backend.services.hotel_insights_rapidapi import get_hotel_insights
 from backend.services.hotel_raw_json import RapidAPIError
 
 router = APIRouter(prefix="/tripadvisor", tags=["tripadvisor-ai"])
