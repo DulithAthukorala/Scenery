@@ -3,7 +3,8 @@ uvicorn[standard]==0.27.0
 pydantic==2.5.3
 pydantic-settings==2.1.0
 python-dotenv==1.0.0
-python-multipart==0.0.6google-generativeai
+python-multipart==0.0.6
+google-generativeai
 httpx==0.28.1
-sklearn==1.3.0
+scikit-learn
 joblib==1.3.2
