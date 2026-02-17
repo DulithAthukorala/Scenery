@@ -8,3 +8,6 @@ google-generativeai
 httpx==0.28.1
 scikit-learn
 joblib==1.3.2
+spacy
+dateparser
+rapidfuzz
