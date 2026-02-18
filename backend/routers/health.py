@@ -3,7 +3,7 @@ Health check endpoint. This is a simple endpoint that can be used to check if th
 """
 from fastapi import APIRouter
 
-router = APIRouter(prefix="/health", tags=["health"])
+router = APIRouter(prefix="/health", tags=["Health"])
 
 @router.get("")
 def health_check():
