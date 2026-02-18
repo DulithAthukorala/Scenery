@@ -1,5 +1,5 @@
 """
-Normalize the TripAdvisor API response into a small, LLM-friendly list of hotels with Details
+Normalize the TripAdvisor JSON API response to a smaller, more LLM-friendly format that keeps only the relevant info for ranking and explanation.
 """
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ def _safe_get(d: dict, path: list[str], default=None):
     cur = d
     for k in path:
         if not isinstance(cur, dict) or k not in cur:
-            return default
+            return default # default can be None or something else if we want("msg not found" etc)
         cur = cur[k] # cur["bubbleRating"] -> cur["rating"]
     return cur
 
