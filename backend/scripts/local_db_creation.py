@@ -1,24 +1,21 @@
-# backend/scripts/local_db_creation.py
 from __future__ import annotations
 
 import json
 import os
-import re
-import sqlite3
+import re # For regular expression based price extraction (e.g. "LKR 25,000" -> 25000)
+import sqlite3 
 import time
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-import requests
+import requests # For making HTTP calls to RapidAPI
 from dotenv import load_dotenv
 
-# Load environment variables from .env file
 load_dotenv()
 
 # -------------------------
 # Hardcoded Sri Lanka GeoIDs (no location search calls)
-# Picked as "top tourism" style set based on your list.
 # You can add/remove cities freely without changing logic.
 # -------------------------
 CITY_GEOIDS: Dict[str, int] = {
@@ -40,43 +37,38 @@ CITY_GEOIDS: Dict[str, int] = {
 }
 
 BASE_URL = "https://tripadvisor16.p.rapidapi.com"
-DB_PATH = Path(__file__).resolve().parents[1] / "data" / "hotels.db"
+DB_PATH = Path(__file__).resolve().parents[1] / "data" / "hotels.db"  # this file go back 2 levels to backend/data/hotels.db
 
 RAPIDAPI_KEY = os.getenv("RAPIDAPI_KEY") or os.getenv("X_RAPIDAPI_KEY")
 RAPIDAPI_HOST = os.getenv("RAPIDAPI_HOST", "tripadvisor16.p.rapidapi.com")
 
 # How many hotels per city to store
-DEFAULT_LIMIT_PER_CITY = int(os.getenv("INGEST_LIMIT_PER_CITY", "25"))
+DEFAULT_LIMIT_PER_CITY = 25
 
-# Basic rate safety (RapidAPI usually ok without, but this avoids spikes)
+# Gives time to be ready for the next city retival (RapidAPI usually ok without, but this avoids spikes)
 SLEEP_BETWEEN_CALLS_SEC = float(os.getenv("INGEST_SLEEP_SEC", "0.2"))
 
 
-# -------------------------
+
 # DB helpers
-# -------------------------
 def _get_conn(db_path: Path) -> sqlite3.Connection:
     db_path.parent.mkdir(parents=True, exist_ok=True)
 
-    conn = sqlite3.connect(db_path, check_same_thread=False)
-    conn.row_factory = sqlite3.Row
+    conn = sqlite3.connect(db_path, check_same_thread=False) # check_same_thread=False allows sharing connection across CPU threads
+    conn.row_factory = sqlite3.Row # allows dict-like access to rows (e.g. row["name"] instead of row[0])
 
-    # Pragmas: good defaults for a small app
-    conn.execute("PRAGMA foreign_keys = ON;")
-    conn.execute("PRAGMA journal_mode = WAL;")
-    conn.execute("PRAGMA synchronous = NORMAL;")
-    conn.execute("PRAGMA temp_store = MEMORY;")
-    conn.execute("PRAGMA cache_size = -20000;")  # ~20MB cache
-    conn.execute("PRAGMA busy_timeout = 3000;")
+    # Pragmas: Rules for how SQLite should operate
+    conn.execute("PRAGMA foreign_keys = ON;") # enforce foreign keys (SQLite doesn't default)
+    conn.execute("PRAGMA journal_mode = WAL;") # reads and writes can happen parallelly
+    conn.execute("PRAGMA synchronous = NORMAL;") # Balance between write speed and crash safety 
+    conn.execute("PRAGMA temp_store = MEMORY;") # temporary tables stored in RAM instead of disk.
+    conn.execute("PRAGMA cache_size = -20000;")  # ~20MB cache in RAM (negative means KB, so -20000 = 20MB)
+    conn.execute("PRAGMA busy_timeout = 3000;") # wait up to 3 seconds if DB is locked
 
     return conn
 
 
 def init_db(db_path: Path) -> None:
-    """
-    Creates the simplified schema YOU asked for.
-    No district/address/lat/long/images/badge/featured/created_at/updated_at.
-    """
     with _get_conn(db_path) as conn:
         conn.execute(
             """
@@ -105,18 +97,19 @@ def init_db(db_path: Path) -> None:
             """
         )
 
+        # Indexes (allow fast lookup instead of scanning entire table)
         conn.execute("CREATE INDEX IF NOT EXISTS idx_hotels_city ON hotels(city);")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_hotels_price_range ON hotels(price_range);")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_hotels_avg_review ON hotels(avg_review);")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_hotels_review_count ON hotels(review_count);")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_hotels_active ON hotels(active);")
-        conn.commit()
+        conn.commit() # Permanently saves changes to the database
 
 
 def _dump(obj: Any) -> str:
-    return json.dumps(obj, ensure_ascii=False) if obj is not None else "null"
+    return json.dumps(obj, ensure_ascii=False) if obj is not None else "null" # ensure_ascii=False allows unicode characters to be stored properly
 
-
+# Insert or update hotel record (if id conflict)
 def upsert_hotel(conn: sqlite3.Connection, row: Dict[str, Any]) -> None:
     conn.execute(
         """
@@ -137,7 +130,7 @@ def upsert_hotel(conn: sqlite3.Connection, row: Dict[str, Any]) -> None:
             :amenities_json, :description,
             :active, CURRENT_TIMESTAMP
         )
-        ON CONFLICT(id) DO UPDATE SET
+        ON CONFLICT(id) DO UPDATE SET 
             name=excluded.name,
             city=excluded.city,
             price_range=excluded.price_range,
@@ -153,12 +146,12 @@ def upsert_hotel(conn: sqlite3.Connection, row: Dict[str, Any]) -> None:
             last_updated=CURRENT_TIMESTAMP
         ;
         """,
-        row,
+        row, # get values from the dict using named parameters (e.g. :name in sqlite replaced by row["name"])
     )
 
 
 def count_hotels(conn: sqlite3.Connection) -> int:
-    r = conn.execute("SELECT COUNT(*) AS n FROM hotels;").fetchone()
+    r = conn.execute("SELECT COUNT(*) AS n FROM hotels;").fetchone() # 
     return int(r["n"] if r else 0)
 
 
@@ -177,7 +170,7 @@ def _headers() -> Dict[str, str]:
 
 
 def fetch_hotels_for_city(geo_id: int) -> List[Dict[str, Any]]:
-    # Generate dates: 5 days from now and 6 days from now
+    # Generate dates: If updating later, consider changing the days for non busy dates to get accurate price data
     checkin_date = (datetime.now() + timedelta(days=5)).strftime("%Y-%m-%d")
     checkout_date = (datetime.now() + timedelta(days=6)).strftime("%Y-%m-%d")
     
@@ -188,7 +181,7 @@ def fetch_hotels_for_city(geo_id: int) -> List[Dict[str, Any]]:
         "checkOut": checkout_date,    # 6 days from now
         "adults": "2",
         "rooms": "1",
-        "currencyCode": "LKR",        # FIXED: Use currencyCode not currency
+        "currencyCode": "LKR",        
         "sort": "BEST_VALUE",
     }
 
@@ -207,43 +200,21 @@ def fetch_hotels_for_city(geo_id: int) -> List[Dict[str, Any]]:
     if not isinstance(hotels, list):
         return []
     
-    # Debug: Check first hotel's price info
-    if hotels and len(hotels) > 0:
-        first_hotel = hotels[0]
-        print(f"  Sample hotel price fields:")
-        print(f"    - priceForDisplay: {first_hotel.get('priceForDisplay')}")
-        print(f"    - strikethroughPrice: {first_hotel.get('strikethroughPrice')}")
-        if 'commerceInfo' in first_hotel:
-            commerce = first_hotel['commerceInfo']
-            if isinstance(commerce.get('priceForDisplay'), dict):
-                print(f"    - commerceInfo.priceForDisplay.text: {commerce['priceForDisplay'].get('text')}")
-            else:
-                print(f"    - commerceInfo.priceForDisplay: {commerce.get('priceForDisplay')}")
-    
     return hotels
-
-
-# -------------------------
-# Normalize (match your RapidAPI shape)
-# -------------------------
-_money_re = re.compile(r"([A-Za-z]{0,3})\s*([\d,]+)")
 
 
 def _clean_title(title: str) -> str:
     # RapidAPI gives titles like "1. Abode Bombay" sometimes
-    return re.sub(r"^\s*\d+\.\s*", "", title).strip()
+    return re.sub(r"^\s*\d+\.\s*", "", title).strip() # removes leading "1. ", "2. " etc from title
 
 
 def _derive_amenities(primary_info: Optional[str]) -> List[str]:
     """
-    Important truth:
-    - RapidAPI searchHotels response does NOT reliably provide full amenities.
-    So we store a lightweight derived list so it's not always empty.
-    Later, if you want real amenities, you'd need a hotel-details endpoint per hotel (more API calls).
+    Get amenities from PrimaryInfo text. The API doesn't give structured amenities everytime
     """
     if not primary_info:
         return []
-    # Keep it simple: store the phrase + a few tags if recognizable
+
     s = primary_info.lower()
     tags: List[str] = [primary_info.strip()]
     if "breakfast" in s:
@@ -252,7 +223,7 @@ def _derive_amenities(primary_info: Optional[str]) -> List[str]:
         tags.append("free")
     if "wifi" in s:
         tags.append("wifi")
-    return list(dict.fromkeys(tags))  # de-dupe, keep order
+    return list(dict.fromkeys(tags))  # Remove duplicate amenities while maintaing original order (e.g. ["free", "wifi", "free"] → ["free", "wifi"])
 
 
 def normalize_hotel(raw: Dict[str, Any], city: str) -> Dict[str, Any]:
@@ -266,6 +237,7 @@ def normalize_hotel(raw: Dict[str, Any], city: str) -> Dict[str, Any]:
     bubble = raw.get("bubbleRating") or {}
     avg_review = bubble.get("rating")
     review_count_raw = bubble.get("count")
+    
     # review_count might be "(51)" or "1,037" depending on endpoint version
     review_count: Optional[int] = None
     if isinstance(review_count_raw, str):
@@ -334,17 +306,11 @@ def normalize_hotel(raw: Dict[str, Any], city: str) -> Dict[str, Any]:
 # Main ingestion
 # -------------------------
 def ingest(db_path: Path, limit_per_city: int) -> None:
-    # Print API key status (first 5 and last 5 chars for security)
     if RAPIDAPI_KEY:
-        key_preview = f"{RAPIDAPI_KEY[:5]}...{RAPIDAPI_KEY[-5:]}"
-        print(f"[INFO] Using API Key: {key_preview}")
-        print(f"[INFO] API Host: {RAPIDAPI_HOST}")
-        
-        # Show the dates we're using
         checkin = (datetime.now() + timedelta(days=5)).strftime("%Y-%m-%d")
         checkout = (datetime.now() + timedelta(days=6)).strftime("%Y-%m-%d")
-        print(f"[INFO] Search dates: {checkin} to {checkout}")
-        print(f"[INFO] Currency: LKR\n")
+        print(f"Search dates: {checkin} to {checkout}")
+        print(f"Currency: LKR\n")
     else:
         print("[ERROR] No API key found!")
         return
@@ -368,7 +334,7 @@ def ingest(db_path: Path, limit_per_city: int) -> None:
                 print(f"[WARN] {city}: 0 hotels returned")
                 continue
 
-            # keep only top N
+            # keep only top N 
             hotels = hotels[:limit_per_city]
 
             stored_city = 0
