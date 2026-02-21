@@ -1,3 +1,6 @@
+"""
+This script creates/updates a local SQLite database with hotel data for Sri Lanka cities using the TripAdvisor API via RapidAPI
+"""
 from __future__ import annotations
 
 import json
