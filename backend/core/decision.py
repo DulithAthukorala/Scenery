@@ -1,20 +1,18 @@
-# backend/core/decision.py
+
 from __future__ import annotations
 
 from dataclasses import asdict
 from typing import Any, Dict
 
 from backend.ml.query_router import predict_intent
-from backend.services.slot_extractor import extract_slots
+from backend.services.keyword_extractor import extract_slots
 
-# Your existing services:
-# - local DB retrieval
+
 from backend.services.hotel_insights_localdb import get_hotel_insights_localdb
-# - RapidAPI retrieval
-from backend.services.hotel_insights_rapidapi import get_hotel_insights_rapidapi
+from backend.services.hotel_insights_rapidapi import get_hotel_insights
 
 
-# ---- Intent labels (must match your dataset labels) ----
+# Intent labels
 EXPLORE_LOCAL = "EXPLORE_LOCAL"
 LIVE_PRICES = "LIVE_PRICES"
 NEEDS_DATES = "NEEDS_DATES"
@@ -42,7 +40,7 @@ def _contains_any(text: str, keywords: tuple[str, ...]) -> bool:
 
 def _apply_overrides(pred_intent: str, query: str, slots) -> str:
     """
-    Rule layer to stabilize TF-IDF mistakes (critical in production).
+    Rule layer to stabilize TF-IDF mistakes.
     """
     has_hotel_signal = _contains_any(query, HOTEL_WORDS)
     has_booking_signal = _contains_any(query, BOOKING_WORDS)
@@ -126,7 +124,7 @@ async def handle_query(user_query: str) -> Dict[str, Any]:
                 "slots": asdict(slots),
             }
 
-        data = await get_hotel_insights_rapidapi(
+        data = await get_hotel_insights(
             location=slots.location,
             checkIn=slots.check_in.isoformat(),
             checkOut=slots.check_out.isoformat(),
