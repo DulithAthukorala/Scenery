@@ -19,7 +19,7 @@ async def hotels_insights_localdb(
     user_request: str = Query("Find the best value hotel for me.", description="Natural-language preference"),
 ):
     if priceMin is not None and priceMax is not None and priceMin > priceMax:
-        raise HTTPException(422, "priceMin must be less than or equal to priceMax")
+        raise HTTPException(422, "Min Price must be less than or equal to Max Price")
 
     try:
         return get_hotel_insights_localdb(
