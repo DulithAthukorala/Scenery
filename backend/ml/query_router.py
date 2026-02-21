@@ -1,4 +1,6 @@
-# backend/ml/query_router.py
+"""
+Load the TF-IDF model trained on the query dataset and use it to predict the intent of a query.
+"""
 from __future__ import annotations
 
 from pathlib import Path
@@ -25,7 +27,6 @@ def _get_model():
 def predict_intent(text: str) -> Tuple[str, float]:
     """
     Returns (predicted_label, confidence).
-    Confidence is max class probability from predict_proba.
     """
     model = _get_model()
     proba = model.predict_proba([text])[0]
