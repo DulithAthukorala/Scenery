@@ -45,3 +45,5 @@ frontend/.env*.local
 *.faiss
 
 backend/ml/*.joblib
+
+backend/scripts/*.wav
