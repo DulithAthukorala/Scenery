@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from typing import AsyncIterator, Dict, Any, Optional
 
 import websockets # helps to talk to ElevenLabs real-time
+from websockets.exceptions import ConnectionClosed, ConnectionClosedOK
 
 
 @dataclass(frozen=True) # frozen=True makes it unchangeable
@@ -67,13 +68,21 @@ class ElevenLabsSTT:
                     await ws.send(json.dumps(msg))
 
                 # Final commit (when user stops speaking)
-                await ws.send(json.dumps({"message_type": "input_audio_chunk", "audio_base_64": "", "commit": True}))
+                try:
+                    await ws.send(json.dumps({"message_type": "input_audio_chunk", "audio_base_64": "", "commit": True}))
+                except ConnectionClosed:
+                    return
 
 
             # keeps receiving messages from ElevenLabs as txt
             async def receiver():
                 while True:
-                    raw = await ws.recv()
+                    try:
+                        raw = await ws.recv()
+                    except ConnectionClosedOK:
+                        break
+                    except ConnectionClosed:
+                        break
                     yield json.loads(raw)
 
 
@@ -87,3 +96,7 @@ class ElevenLabsSTT:
             finally:
                 if send_task:
                     send_task.cancel()
+                    try:
+                        await send_task
+                    except Exception:
+                        pass
