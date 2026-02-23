@@ -1,24 +1,18 @@
-"""
-This module contains the core decision logic
-- Takes user queries as input
-- Predicts intent and extracts slots
-- Routes to the appropriate data source (local DB or RapidAPI) based on intent and slot completeness
-- Returns a structured JSON dict for the frontend to consume
-"""
 from __future__ import annotations
 
 from dataclasses import asdict
-from typing import Any, Dict
+from typing import Any, Dict, Tuple
 
 from backend.ml.query_router import predict_intent
 from backend.services.keyword_extractor import extract_slots
 
-
 from backend.services.hotel_insights_localdb import get_hotel_insights_localdb
 from backend.services.hotel_insights_rapidapi import get_hotel_insights
 
+from backend.services.location_geoid_converter import convert_geo_id, CITY_GEOIDS
 
-# Intent labels
+
+# Intent labels (keep your existing ones)
 EXPLORE_LOCAL = "EXPLORE_LOCAL"
 LIVE_PRICES = "LIVE_PRICES"
 NEEDS_DATES = "NEEDS_DATES"
@@ -39,55 +33,94 @@ BOOKING_WORDS = (
 )
 
 
-def _contains_any(text: str, keywords: tuple[str, ...]) -> bool:
-    t = text.lower()
+def _contains_any(text: str, keywords: Tuple[str, ...]) -> bool:
+    t = (text or "").lower()
     return any(k in t for k in keywords)
 
 
 def _apply_overrides(pred_intent: str, query: str, slots) -> str:
     """
     Rule layer to stabilize TF-IDF mistakes.
+    Priority:
+      1) If dates exist -> LIVE_PRICES
+      2) If booking-like query but missing dates -> NEEDS_DATES
+      3) If hotel-like query -> EXPLORE_LOCAL (unless already live/needs_dates)
     """
     has_hotel_signal = _contains_any(query, HOTEL_WORDS)
     has_booking_signal = _contains_any(query, BOOKING_WORDS)
 
-    # If dates are explicit -> LIVE_PRICES
-    if slots.check_in and slots.check_out:
+    # If explicit dates exist -> must be LIVE_PRICES
+    if getattr(slots, "check_in", None) and getattr(slots, "check_out", None):
         return LIVE_PRICES
 
-    # If booking/price/availability intent but missing exact dates -> NEEDS_DATES
-    if has_booking_signal and not (slots.check_in and slots.check_out):
+    # Booking/price intent but missing dates -> ask for dates
+    if has_booking_signal and not (getattr(slots, "check_in", None) and getattr(slots, "check_out", None)):
         return NEEDS_DATES
 
-    # If it's clearly hotel-related, never fall into OUT_OF_SCOPE-like behavior
+    # Hotel-like queries should go local explore by default
     if has_hotel_signal and pred_intent not in (LIVE_PRICES, NEEDS_DATES):
         return EXPLORE_LOCAL
 
     return pred_intent
 
 
+def _ask_location_payload(intent: str, confidence: float, slots, extra_msg: str = "") -> Dict[str, Any]:
+    cities = list(CITY_GEOIDS.keys())
+    msg = "Which city/area are you looking for? (e.g., " + ", ".join(cities[:6]) + ")"
+    if extra_msg:
+        msg = extra_msg.strip() + " " + msg
+    return {
+        "intent": intent,
+        "confidence": confidence,
+        "action": "ASK_LOCATION",
+        "message": msg,
+        "slots": asdict(slots),
+        "choices": cities,
+    }
+
+
+def _ask_dates_payload(intent: str, confidence: float, slots, needs_location_too: bool) -> Dict[str, Any]:
+    if needs_location_too:
+        msg = "Tell me the city/area AND your check-in + check-out dates."
+    else:
+        msg = "What are your check-in and check-out dates?"
+    return {
+        "intent": intent,
+        "confidence": confidence,
+        "action": "ASK_DATES",
+        "message": msg,
+        "slots": asdict(slots),
+    }
+
+
 async def handle_query(user_query: str) -> Dict[str, Any]:
     """
-    Single entry point for your routers.
-    Returns a structured JSON dict for the frontend.
+    Single entry point for text + voice routers.
+
+    Output is frontend-friendly:
+      - action: ASK_LOCATION / ASK_DATES / LOCAL_DB / RAPIDAPI
+      - data: results payload
     """
     pred_intent, confidence = predict_intent(user_query)
     slots = extract_slots(user_query)
 
     intent = _apply_overrides(pred_intent, user_query, slots)
 
-    # ---- Route ----
+    # ----------------------------
+    # 1) Local exploration (SQLite)
+    # ----------------------------
     if intent == EXPLORE_LOCAL:
-        if not slots.location:
-            return {
-                "intent": intent,
-                "confidence": confidence,
-                "action": "ASK_LOCATION",
-                "message": "Which city/area in Sri Lanka are you looking for? (e.g., Galle, Colombo, Ella)",
-                "slots": asdict(slots),
-            }
+        if not getattr(slots, "location", None):
+            return _ask_location_payload(intent, confidence, slots)
 
-        data = get_hotel_insights_localdb(location=slots.location, user_request=user_query)
+        data = get_hotel_insights_localdb(
+            location=slots.location,
+            user_request=user_query,
+            rating=getattr(slots, "rating", None),
+            priceMin=getattr(slots, "price_min", None),
+            priceMax=getattr(slots, "price_max", None),
+        )
+
         return {
             "intent": intent,
             "confidence": confidence,
@@ -96,59 +129,58 @@ async def handle_query(user_query: str) -> Dict[str, Any]:
             "data": data,
         }
 
+    # ----------------------------
+    # 2) Needs dates (ask user)
+    # ----------------------------
     if intent == NEEDS_DATES:
-        # Optionally: if location exists, you can also return local DB suggestions alongside asking dates.
-        msg = "What are your check-in and check-out dates?"
-        if not slots.location:
-            msg = "Which city/area, and what are your check-in and check-out dates?"
+        needs_location_too = not bool(getattr(slots, "location", None))
+        return _ask_dates_payload(intent, confidence, slots, needs_location_too)
 
-        return {
-            "intent": intent,
-            "confidence": confidence,
-            "action": "ASK_DATES",
-            "message": msg,
-            "slots": asdict(slots),
-        }
-
+    # ----------------------------
+    # 3) Live prices (RapidAPI)
+    # ----------------------------
     if intent == LIVE_PRICES:
-        # Must have dates; if not, downgrade to NEEDS_DATES
-        if not (slots.check_in and slots.check_out):
-            return {
-                "intent": NEEDS_DATES,
-                "confidence": confidence,
-                "action": "ASK_DATES",
-                "message": "What are your check-in and check-out dates?",
-                "slots": asdict(slots),
-            }
+        # Must have dates
+        if not (getattr(slots, "check_in", None) and getattr(slots, "check_out", None)):
+            return _ask_dates_payload(NEEDS_DATES, confidence, slots, needs_location_too=not bool(getattr(slots, "location", None)))
 
-        if not slots.location:
-            return {
-                "intent": NEEDS_DATES,
-                "confidence": confidence,
-                "action": "ASK_LOCATION",
-                "message": "Which city/area should I check prices for? (e.g., Galle, Colombo, Ella)",
-                "slots": asdict(slots),
-            }
+        # Must have location -> resolve geoId
+        if not getattr(slots, "location", None):
+            return _ask_location_payload(NEEDS_DATES, confidence, slots, extra_msg="To check live prices,")
+
+        geo = convert_geo_id(slots.location)
+        if not geo.geo_id:
+            return _ask_location_payload(
+                NEEDS_DATES,
+                confidence,
+                slots,
+                extra_msg=f"I couldn't map '{slots.location}' to a supported city.",
+            )
 
         data = await get_hotel_insights(
-            location=slots.location,
+            geoId=str(geo.geo_id),
             checkIn=slots.check_in.isoformat(),
             checkOut=slots.check_out.isoformat(),
-            adults=slots.adults or 2,
-            rooms=slots.rooms or 1,
-            priceMin=slots.price_min,
-            priceMax=slots.price_max,
+            adults=getattr(slots, "adults", None) or 2,
+            rooms=getattr(slots, "rooms", None) or 1,
+            priceMin=getattr(slots, "price_min", None),
+            priceMax=getattr(slots, "price_max", None),
+            rating=getattr(slots, "rating", None),
             user_request=user_query,
         )
+
         return {
             "intent": intent,
             "confidence": confidence,
             "action": "RAPIDAPI",
             "slots": asdict(slots),
+            "geo": {"geoId": geo.geo_id, "city": geo.matched_city, "reason": geo.reason},
             "data": data,
         }
 
-    # Fallback (should be rare after overrides)
+    # ----------------------------
+    # 4) Fallback
+    # ----------------------------
     return {
         "intent": pred_intent,
         "confidence": confidence,
