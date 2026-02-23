@@ -1,50 +1,57 @@
-"""
-This service is turns user location strings into geoIds for hotel queries.
-"""
 from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from typing import Optional, Dict
+from typing import Dict, Optional
+
+
+# Your mapping (as requested)
+CITY_GEOIDS: Dict[str, int] = {
+    "Colombo": 293962,
+    "Kandy": 304138,
+    "Galle": 189825,
+    "Ella": 616035,
+    "Nuwara Eliya": 608524,
+    "Sigiriya": 304141,
+    "Mirissa": 1407334,
+    "Negombo": 297897,
+    "Trincomalee": 424963,
+    "Arugam Bay": 3348959,
+    "Jaffna": 304135,
+    "Hambantota": 424962,
+    "Anuradhapura": 304132,
+    "Polonnaruwa": 304139,
+    "Chilaw": 447558,
+}
 
 
 @dataclass(frozen=True)
 class GeoResolveResult:
     geo_id: Optional[int]
-    normalized_query: str
-    strategy: str  # "direct_id" | "map" | "unknown"
+    matched_city: str
+    reason: str  # "direct_id" | "map" | "unknown"
 
 
-# Can be expanded in the future with more cities 
-CITY_GEOIDS: Dict[str, int] = {
-    "colombo": 293962,
-    "kandy": 304138,
-    "galle": 189825,
-    "ella": 616035,
-    "nuwara eliya": 608524,
-    "sigiriya": 304141,
-    "mirissa": 1407334,
-    "negombo": 297897,
-    "trincomalee": 424963,
-    "arugam bay": 3348959,
-    "jaffna": 304135,
-    "hambantota": 424962,
-    "anuradhapura": 304132,
-    "polonnaruwa": 304139,
-    "chilaw": 447558,
-}
+_WORDS_ONLY = re.compile(r"[^a-zA-Z\s]+")
 
 
 def _normalize(text: str) -> str:
-    text = (text or "").strip().lower()
-    text = re.sub(r"[^a-z0-9\s]", " ", text)
-    text = re.sub(r"\s+", " ", text)
-    return text.strip()
+    """
+    Normalize a user location string so we can match CITY_GEOIDS robustly.
+    """
+    t = (text or "").strip()
+    t = _WORDS_ONLY.sub(" ", t)
+    t = " ".join(t.split())
+    return t.lower()
 
 
 def convert_geo_id(location: str) -> GeoResolveResult:
     """
     Convert user location string -> geoId.
+    Supports:
+      - already numeric strings (e.g. "189825")
+      - exact city matches (case-insensitive)
+      - city appears inside longer phrase ("best hotels in galle")
     """
     raw = (location or "").strip()
     if not raw:
@@ -56,13 +63,14 @@ def convert_geo_id(location: str) -> GeoResolveResult:
 
     norm = _normalize(raw)
 
-    # Exact match
-    if norm in CITY_GEOIDS:
-        return GeoResolveResult(CITY_GEOIDS[norm], norm, "map")
+    # exact match against keys
+    for city, gid in CITY_GEOIDS.items():
+        if _normalize(city) == norm:
+            return GeoResolveResult(gid, city, "map")
 
-    # Try last words (e.g. "hotels in colombo")
-    for city in CITY_GEOIDS:
-        if city in norm:
-            return GeoResolveResult(CITY_GEOIDS[city], city, "map")
+    # city appears inside phrase
+    for city, gid in CITY_GEOIDS.items():
+        if _normalize(city) in norm:
+            return GeoResolveResult(gid, city, "map")
 
-    return GeoResolveResult(None, norm, "unknown")
+    return GeoResolveResult(None, raw, "unknown")
