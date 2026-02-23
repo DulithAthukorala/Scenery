@@ -44,7 +44,7 @@ class ElevenLabsSTT:
         headers = {"xi-api-key": self.cfg.api_key} # authentication for ElevenLabs API
 
         # connect to ElevenLabs
-        async with websockets.connect(url, extra_headers=headers) as ws:
+        async with websockets.connect(url, additional_headers=headers) as ws:
             # First message -> usually session_started
             first = await ws.recv() # wait for the first message
             yield json.loads(first) # {"message_type": "session_started"}
