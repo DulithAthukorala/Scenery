@@ -1,4 +1,10 @@
-
+"""
+This module contains the core decision logic
+- Takes user queries as input
+- Predicts intent and extracts slots
+- Routes to the appropriate data source (local DB or RapidAPI) based on intent and slot completeness
+- Returns a structured JSON dict for the frontend to consume
+"""
 from __future__ import annotations
 
 from dataclasses import asdict
