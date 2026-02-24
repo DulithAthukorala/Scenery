@@ -12,7 +12,7 @@ from backend.services.hotel_insights_rapidapi import get_hotel_insights
 from backend.services.location_geoid_converter import convert_geo_id, CITY_GEOIDS
 
 
-# Intent labels (keep your existing ones)
+# Intention labels
 EXPLORE_LOCAL = "EXPLORE_LOCAL"
 LIVE_PRICES = "LIVE_PRICES"
 NEEDS_DATES = "NEEDS_DATES"
@@ -32,10 +32,10 @@ BOOKING_WORDS = (
     "for 1 night", "for 2 nights", "for 3 nights"
 )
 
-
+# helper function to check if any of the keywords are in the text
 def _contains_any(text: str, keywords: Tuple[str, ...]) -> bool:
     t = (text or "").lower()
-    return any(k in t for k in keywords)
+    return any(k in t for k in keywords) # if any of the keywords are found in the text, return True
 
 
 def _apply_overrides(pred_intent: str, query: str, slots) -> str:
@@ -64,9 +64,9 @@ def _apply_overrides(pred_intent: str, query: str, slots) -> str:
     return pred_intent
 
 
-def _ask_location_payload(intent: str, confidence: float, slots, extra_msg: str = "") -> Dict[str, Any]:
+def _ask_location(intent: str, confidence: float, slots, extra_msg: str = "") -> Dict[str, Any]:
     cities = list(CITY_GEOIDS.keys())
-    msg = "Which city/area are you looking for? (e.g., " + ", ".join(cities[:6]) + ")"
+    msg = "Which city/area are you looking for? (e.g. : 'Mirissa', 'Colombo', 'Galle')"
     if extra_msg:
         msg = extra_msg.strip() + " " + msg
     return {
@@ -79,7 +79,7 @@ def _ask_location_payload(intent: str, confidence: float, slots, extra_msg: str 
     }
 
 
-def _ask_dates_payload(intent: str, confidence: float, slots, needs_location_too: bool) -> Dict[str, Any]:
+def _ask_dates(intent: str, confidence: float, slots, needs_location_too: bool) -> Dict[str, Any]:
     if needs_location_too:
         msg = "Tell me the city/area AND your check-in + check-out dates."
     else:
@@ -96,10 +96,6 @@ def _ask_dates_payload(intent: str, confidence: float, slots, needs_location_too
 async def handle_query(user_query: str) -> Dict[str, Any]:
     """
     Single entry point for text + voice routers.
-
-    Output is frontend-friendly:
-      - action: ASK_LOCATION / ASK_DATES / LOCAL_DB / RAPIDAPI
-      - data: results payload
     """
     pred_intent, confidence = predict_intent(user_query)
     slots = extract_slots(user_query)
@@ -111,7 +107,7 @@ async def handle_query(user_query: str) -> Dict[str, Any]:
     # ----------------------------
     if intent == EXPLORE_LOCAL:
         if not getattr(slots, "location", None):
-            return _ask_location_payload(intent, confidence, slots)
+            return _ask_location(intent, confidence, slots)
 
         data = get_hotel_insights_localdb(
             location=slots.location,
@@ -130,11 +126,11 @@ async def handle_query(user_query: str) -> Dict[str, Any]:
         }
 
     # ----------------------------
-    # 2) Needs dates (ask user)
+    # 2) Needs dates (Maybe location too)
     # ----------------------------
     if intent == NEEDS_DATES:
         needs_location_too = not bool(getattr(slots, "location", None))
-        return _ask_dates_payload(intent, confidence, slots, needs_location_too)
+        return _ask_dates(intent, confidence, slots, needs_location_too)
 
     # ----------------------------
     # 3) Live prices (RapidAPI)
@@ -142,15 +138,15 @@ async def handle_query(user_query: str) -> Dict[str, Any]:
     if intent == LIVE_PRICES:
         # Must have dates
         if not (getattr(slots, "check_in", None) and getattr(slots, "check_out", None)):
-            return _ask_dates_payload(NEEDS_DATES, confidence, slots, needs_location_too=not bool(getattr(slots, "location", None)))
+            return _ask_dates(NEEDS_DATES, confidence, slots, needs_location_too=not bool(getattr(slots, "location", None)))
 
         # Must have location -> resolve geoId
         if not getattr(slots, "location", None):
-            return _ask_location_payload(NEEDS_DATES, confidence, slots, extra_msg="To check live prices,")
+            return _ask_location(NEEDS_DATES, confidence, slots, extra_msg="To check live prices,")
 
         geo = convert_geo_id(slots.location)
         if not geo.geo_id:
-            return _ask_location_payload(
+            return _ask_location(
                 NEEDS_DATES,
                 confidence,
                 slots,

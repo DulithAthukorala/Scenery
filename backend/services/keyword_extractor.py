@@ -1,3 +1,10 @@
+"""
+This module contains logic to extract information from user queries. 
+    - location
+    - check-in/check-out dates
+    - number of people/rooms 
+    - budget.
+"""
 from __future__ import annotations
 
 import re
