@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from typing import Dict, Optional
 
 
-# Your mapping (as requested)
+# Tripadvisor(RapidAPI) geoIds
 CITY_GEOIDS: Dict[str, int] = {
     "Colombo": 293962,
     "Kandy": 304138,
@@ -32,13 +32,10 @@ class GeoResolveResult:
     reason: str  # "direct_id" | "map" | "unknown"
 
 
-_WORDS_ONLY = re.compile(r"[^a-zA-Z\s]+")
+_WORDS_ONLY = re.compile(r"[^a-zA-Z\s]+") # Keep only letters and spaces. Remove everything else
 
 
 def _normalize(text: str) -> str:
-    """
-    Normalize a user location string so we can match CITY_GEOIDS robustly.
-    """
     t = (text or "").strip()
     t = _WORDS_ONLY.sub(" ", t)
     t = " ".join(t.split())
@@ -48,10 +45,6 @@ def _normalize(text: str) -> str:
 def convert_geo_id(location: str) -> GeoResolveResult:
     """
     Convert user location string -> geoId.
-    Supports:
-      - already numeric strings (e.g. "189825")
-      - exact city matches (case-insensitive)
-      - city appears inside longer phrase ("best hotels in galle")
     """
     raw = (location or "").strip()
     if not raw:
@@ -68,9 +61,9 @@ def convert_geo_id(location: str) -> GeoResolveResult:
         if _normalize(city) == norm:
             return GeoResolveResult(gid, city, "map")
 
-    # city appears inside phrase
+    # city appears inside phrase (not used but added for robustness)
     for city, gid in CITY_GEOIDS.items():
         if _normalize(city) in norm:
             return GeoResolveResult(gid, city, "map")
 
-    return GeoResolveResult(None, raw, "unknown")
+    return GeoResolveResult(None, raw, "Could not find a matching geoid for location")
