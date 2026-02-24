@@ -7,6 +7,7 @@ import base64 # convert audio to bas64 for ElevenLabs
 import json # WebSocket messages are sent as JSON text.
 from dataclasses import dataclass
 from typing import AsyncIterator, Dict, Any, Optional
+from urllib.parse import urlencode
 
 import websockets # helps to talk to ElevenLabs real-time
 from websockets.exceptions import ConnectionClosedOK, ConnectionClosed # intentional closing and unintentional closing of erros
@@ -19,6 +20,12 @@ class ElevenSTTConfig:
     api_key: str
     model_id: str = "scribe_v2_realtime"
     sample_rate: int = 16000 # 16000 Hz is standard for speech recognition (ElevenLabs docs)
+    language_code: str = "en"
+
+    def __post_init__(self) -> None:
+        # force English-only STT
+        if self.language_code != "en":
+            raise ValueError("ElevenSTTConfig.language_code must be 'en'")
 
 
 class ElevenLabsSTT:
@@ -39,8 +46,14 @@ class ElevenLabsSTT:
         previous_text: Optional[str] = None, # helps for long conversations (context for better accuracy)
         commit_each_chunk: bool = False, # tells user finished speaking and should finalize the transcript
     ) -> AsyncIterator[Dict[str, Any]]:
-        
-        url = f"{self.WS_URL}?model_id={self.cfg.model_id}"
+
+        language_code = "en"
+        query = urlencode({
+            "model_id": self.cfg.model_id,
+            "language_code": language_code,
+            "include_language_detection": "false",
+        })
+        url = f"{self.WS_URL}?{query}"
         headers = {"xi-api-key": self.cfg.api_key} # authentication for ElevenLabs API
 
         # connect to ElevenLabs
@@ -56,6 +69,7 @@ class ElevenLabsSTT:
                         "message_type": "input_audio_chunk",
                         "audio_base_64": base64.b64encode(chunk).decode("ascii"), # audio bytes (binary) -> base64-encoded bytes -> ASCII for safe JSON/WebSocket transport
                         "sample_rate": self.cfg.sample_rate,
+                        "language_code": language_code,
                     }
                     # if you have previous text
                     if previous_text:
