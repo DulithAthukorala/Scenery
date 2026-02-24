@@ -1,6 +1,10 @@
+import warnings
 from fastapi import FastAPI
 from backend.routers import health, rapidapi_insights, localdb_insights, voice, chat
 
+
+# signore pydantic warnings about field names that match BaseModel attributes by google genai library
+warnings.filterwarnings("ignore", message="Field name .* shadows an attribute in parent")
 app = FastAPI(title="Scenery API")
 
 app.include_router(health.router) # health check endpoint (GET /health)
