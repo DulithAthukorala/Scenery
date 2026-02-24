@@ -1,4 +1,6 @@
-# backend/services/eleven_stt.py
+"""
+ElevenLabs real-time speech-to-text streaming service.
+"""
 from __future__ import annotations
 
 import base64 # convert audio to bas64 for ElevenLabs
@@ -7,7 +9,9 @@ from dataclasses import dataclass
 from typing import AsyncIterator, Dict, Any, Optional
 
 import websockets # helps to talk to ElevenLabs real-time
-from websockets.exceptions import ConnectionClosed, ConnectionClosedOK
+from websockets.exceptions import ConnectionClosedOK, ConnectionClosed # intentional closing and unintentional closing of erros
+
+import asyncio
 
 
 @dataclass(frozen=True) # frozen=True makes it unchangeable
@@ -18,11 +22,6 @@ class ElevenSTTConfig:
 
 
 class ElevenLabsSTT:
-    """
-    Protocol (docs):
-    - Send: {"message_type":"input_audio_chunk","audio_base_64":"...","commit":true,"sample_rate":16000}
-    - Receive: message_type in {"partial_transcript","committed_transcript",...}
-    """
     WS_URL = "wss://api.elevenlabs.io/v1/speech-to-text/realtime"
 
     def __init__(self, cfg: ElevenSTTConfig):
@@ -40,7 +39,7 @@ class ElevenLabsSTT:
         previous_text: Optional[str] = None, # helps for long conversations (context for better accuracy)
         commit_each_chunk: bool = False, # tells user finished speaking and should finalize the transcript
     ) -> AsyncIterator[Dict[str, Any]]:
-        # wss://api.elevenlabs.io/v1/speech-to-text/realtime?model_id=scribe_v2_realtime
+        
         url = f"{self.WS_URL}?model_id={self.cfg.model_id}"
         headers = {"xi-api-key": self.cfg.api_key} # authentication for ElevenLabs API
 
@@ -50,11 +49,12 @@ class ElevenLabsSTT:
             first = await ws.recv() # wait for the first message
             yield json.loads(first) # {"message_type": "session_started"}
 
+            # sender() takes raw audio chunks, converts to base64, and sends to ElevenLabs
             async def sender():
                 async for chunk in audio_chunks:
                     msg = {
                         "message_type": "input_audio_chunk",
-                        "audio_base_64": base64.b64encode(chunk).decode("ascii"), # actual sound data converted to base64 string
+                        "audio_base_64": base64.b64encode(chunk).decode("ascii"), # audio bytes (binary) -> base64-encoded bytes -> ASCII for safe JSON/WebSocket transport
                         "sample_rate": self.cfg.sample_rate,
                     }
                     # if you have previous text
@@ -89,14 +89,14 @@ class ElevenLabsSTT:
             # running both sender() and receiver() concurrently
             send_task = None
             try:
-                send_task = __import__("asyncio").create_task(sender())
+                send_task = asyncio.create_task(sender())
                 async for event in receiver():
                     yield event
-            # if 
+            # finnally runs when either sender() or receiver() finishes (like user stops speaking or connection closes) 
             finally:
                 if send_task:
-                    send_task.cancel()
+                    send_task.cancel() # if sender() is still running, stop it
                     try:
-                        await send_task
-                    except Exception:
+                        await send_task # wait for sender() to finish cleanup
+                    except asyncio.CancelledError: # if there is a error during cancellation, ignore it
                         pass
