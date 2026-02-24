@@ -23,5 +23,6 @@ async def chat_query(payload: ChatRequest):
     if not user_query:
         raise HTTPException(status_code=400, detail="query must not be empty")
 
-    logger.info("chat_query_received mode=%s", payload.mode)
-    return await handle_query(user_query)
+    mode = payload.mode if payload.mode in ("text", "voice") else "text"
+    logger.info("chat_query_received mode=%s", mode)
+    return await handle_query(user_query, mode=mode)

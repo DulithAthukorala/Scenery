@@ -76,7 +76,7 @@ async def voice_stream(websocket: WebSocket):
         try:
             logger.info("about_to_call_decision text=%r", final_text)
             decision_fn = _get_decision_fn()
-            result = decision_fn(final_text)
+            result = decision_fn(final_text, mode="voice")
             if inspect.isawaitable(result):
                 result = await result
             elapsed_ms = int((time.perf_counter() - started) * 1000)
