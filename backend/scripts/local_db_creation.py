@@ -24,7 +24,7 @@ load_dotenv()
 CITY_GEOIDS: Dict[str, int] = {
     "Colombo": 293962,
     "Kandy": 304138,
-    "Galle": 189825,
+    "Galle": 297896,
     "Ella": 616035,
     "Nuwara Eliya": 608524,
     "Sigiriya": 304141,
@@ -33,7 +33,7 @@ CITY_GEOIDS: Dict[str, int] = {
     "Trincomalee": 424963,
     "Arugam Bay": 3348959,
     "Jaffna": 304135,
-    "Hambantota": 424962,
+    "Hambantota":  1027209,
     "Anuradhapura": 304132,
     "Polonnaruwa": 304139,
     "Chilaw": 447558,
