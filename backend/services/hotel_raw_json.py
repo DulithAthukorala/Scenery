@@ -71,8 +71,11 @@ def _headers() -> Dict[str, str]:
     }
 
 
-def _iso(d: date) -> str:
+def _iso(d) -> str:
     # RapidAPI docs + your curl show ISO YYYY-MM-DD
+    # Handle both date objects and ISO strings
+    if isinstance(d, str):
+        return d
     return d.isoformat()
 
 
@@ -214,8 +217,15 @@ async def search_hotels(
     if cached is not None:
         return cached
 
+    # Debug: Log the request
+    print(f"DEBUG: RapidAPI Request URL: {url}")
+    print(f"DEBUG: RapidAPI Params: {params}")
+
     async with httpx.AsyncClient(timeout=30) as client:  # create async client with 30s timeout & close
         r = await client.get(url, headers=_headers(), params=params)
+
+    print(f"DEBUG: RapidAPI Response Status: {r.status_code}")
+    print(f"DEBUG: RapidAPI Response: {r.text[:500]}")  # First 500 chars
 
     if r.status_code >= 400:
         # Try JSON; fallback to text

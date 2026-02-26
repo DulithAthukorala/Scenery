@@ -1,11 +1,21 @@
 import warnings
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from backend.routers import health, rapidapi_insights, localdb_insights, voice, chat
 
 
 # signore pydantic warnings about field names that match BaseModel attributes by google genai library
 warnings.filterwarnings("ignore", message="Field name .* shadows an attribute in parent")
 app = FastAPI(title="Scenery API")
+
+# Add CORS middleware to allow frontend requests
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # Allows all origins
+    allow_credentials=True,
+    allow_methods=["*"],  # Allows all methods
+    allow_headers=["*"],  # Allows all headers
+)
 
 app.include_router(health.router) # health check endpoint (GET /health)
 app.include_router(rapidapi_insights.router) # rapidapi insights endpoint, takes search parameters + user request and returns LLM-ranked hotel insights

@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Search Hotels - Scenery</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <!-- Navigation -->
+    <nav class="navbar glass-morphism">
+        <div class="nav-content">
+            <a href="index.html" class="nav-brand">
+                <svg class="brand-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <circle cx="12" cy="12" r="10"/>
+                    <polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76"/>
+                </svg>
+                <span class="gradient-text">Scenery</span>
+            </a>
+            <div class="nav-links">
+                <a href="index.html" class="nav-link">Home</a>
+                <a href="chat.html" class="nav-link">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+                    </svg>
+                    Chat
+                </a>
+                <a href="voice.html" class="nav-link">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
+                        <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
+                        <line x1="12" y1="19" x2="12" y2="23"/>
+                        <line x1="8" y1="23" x2="16" y2="23"/>
+                    </svg>
+                    Voice
+                </a>
+                <a href="search.html" class="nav-link active">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="11" cy="11" r="8"/>
+                        <path d="m21 21-4.35-4.35"/>
+                    </svg>
+                    Search
+                </a>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Main Content -->
+    <main class="main-content">
+        <div class="search-page fade-in">
+            <div class="search-header">
+                <h1 class="search-title">
+                    <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="11" cy="11" r="8"/>
+                        <path d="m21 21-4.35-4.35"/>
+                    </svg>
+                    Explore Hotels in Sri Lanka
+                </h1>
+                <p class="search-subtitle">Use filters to find your perfect accommodation</p>
+            </div>
+
+            <div class="search-layout">
+                <!-- Filters Sidebar -->
+                <aside class="filters-sidebar glass-morphism">
+                    <div class="filters-header">
+                        <h2>
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/>
+                            </svg>
+                            Filters
+                        </h2>
+                        <button onclick="clearFilters()" class="clear-button">Clear All</button>
+                    </div>
+
+                    <form class="filters-form" id="searchForm">
+                        <div class="filter-group">
+                            <label class="filter-label">
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/>
+                                    <circle cx="12" cy="10" r="3"/>
+                                </svg>
+                                Location *
+                            </label>
+                            <select name="location" id="location" class="filter-select" required>
+                                <option value="">Select a location</option>
+                                <option value="Colombo">Colombo</option>
+                                <option value="Kandy">Kandy</option>
+                                <option value="Galle">Galle</option>
+                                <option value="Negombo">Negombo</option>
+                                <option value="Ella">Ella</option>
+                                <option value="Nuwara Eliya">Nuwara Eliya</option>
+                                <option value="Hikkaduwa">Hikkaduwa</option>
+                                <option value="Mirissa">Mirissa</option>
+                                <option value="Unawatuna">Unawatuna</option>
+                                <option value="Arugam Bay">Arugam Bay</option>
+                                <option value="Trincomalee">Trincomalee</option>
+                                <option value="Jaffna">Jaffna</option>
+                            </select>
+                        </div>
+
+                        <div class="filter-group">
+                            <label class="filter-label">
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>
+                                </svg>
+                                Minimum Rating
+                            </label>
+                            <select name="rating" id="rating" class="filter-select">
+                                <option value="">Any rating</option>
+                                <option value="3">3+ stars</option>
+                                <option value="4">4+ stars</option>
+                                <option value="5">5 stars</option>
+                            </select>
+                        </div>
+
+                        <div class="filter-group">
+                            <label class="filter-label">
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <line x1="12" y1="1" x2="12" y2="23"/>
+                                    <path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>
+                                </svg>
+                                Price Range (USD)
+                            </label>
+                            <div class="price-inputs">
+                                <input type="number" name="priceMin" id="priceMin" placeholder="Min" class="filter-input" min="0" />
+                                <span class="price-separator">-</span>
+                                <input type="number" name="priceMax" id="priceMax" placeholder="Max" class="filter-input" min="0" />
+                            </div>
+                        </div>
+
+                        <div class="filter-group">
+                            <label class="filter-label">Your Preferences</label>
+                            <textarea
+                                name="userRequest"
+                                id="userRequest"
+                                class="filter-textarea"
+                                rows="3"
+                                placeholder="E.g., I want a hotel near the beach with a pool..."
+                            >Find the best value hotel for me.</textarea>
+                        </div>
+
+                        <button type="submit" class="search-button" id="searchButton">
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <circle cx="11" cy="11" r="8"/>
+                                <path d="m21 21-4.35-4.35"/>
+                            </svg>
+                            Search Hotels
+                        </button>
+                    </form>
+                </aside>
+
+                <!-- Results Section -->
+                <main class="results-section">
+                    <div class="empty-state glass-morphism" id="emptyState">
+                        <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <circle cx="11" cy="11" r="8"/>
+                            <path d="m21 21-4.35-4.35"/>
+                        </svg>
+                        <h3>Start Your Search</h3>
+                        <p>Select a location and preferences to find amazing hotels in Sri Lanka</p>
+                    </div>
+
+                    <div id="resultsContainer" style="display: none;"></div>
+                    <div id="errorMessage" style="display: none;"></div>
+                </main>
+            </div>
+        </div>
+    </main>
+
+    <script src="search.js"></script>
+</body>
+</html>

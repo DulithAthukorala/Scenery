@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Voice Chat - Scenery AI</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <!-- Navigation -->
+    <nav class="navbar glass-morphism">
+        <div class="nav-content">
+            <a href="index.html" class="nav-brand">
+                <svg class="brand-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <circle cx="12" cy="12" r="10"/>
+                    <polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76"/>
+                </svg>
+                <span class="gradient-text">Scenery</span>
+            </a>
+            <div class="nav-links">
+                <a href="index.html" class="nav-link">Home</a>
+                <a href="chat.html" class="nav-link">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+                    </svg>
+                    Chat
+                </a>
+                <a href="voice.html" class="nav-link active">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
+                        <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
+                        <line x1="12" y1="19" x2="12" y2="23"/>
+                        <line x1="8" y1="23" x2="16" y2="23"/>
+                    </svg>
+                    Voice
+                </a>
+                <a href="search.html" class="nav-link">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="11" cy="11" r="8"/>
+                        <path d="m21 21-4.35-4.35"/>
+                    </svg>
+                    Search
+                </a>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Main Content -->
+    <main class="main-content">
+        <div class="voice-page fade-in">
+            <div class="voice-container">
+                <!-- Voice Header -->
+                <div class="voice-header glass-morphism">
+                    <div class="voice-header-content">
+                        <div class="voice-icon">
+                            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
+                                <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
+                                <line x1="12" y1="19" x2="12" y2="23"/>
+                                <line x1="8" y1="23" x2="16" y2="23"/>
+                            </svg>
+                        </div>
+                        <div>
+                            <h1 class="voice-title">Voice Assistant</h1>
+                            <p class="voice-subtitle">Speak naturally to find hotels</p>
+                        </div>
+                    </div>
+                    <div class="status-indicator">
+                        <div class="status-dot" id="statusDot"></div>
+                        <span id="statusText">Disconnected</span>
+                    </div>
+                </div>
+
+                <!-- Voice Visualizer -->
+                <div class="voice-visualizer glass-morphism">
+                    <div class="visualizer-content">
+                        <div class="mic-button-container">
+                            <button id="micButton" class="mic-button" disabled>
+                                <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
+                                    <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
+                                    <line x1="12" y1="19" x2="12" y2="23"/>
+                                    <line x1="8" y1="23" x2="16" y2="23"/>
+                                </svg>
+                            </button>
+                            <p class="mic-status" id="micStatus">Connecting...</p>
+                        </div>
+                        
+                        <!-- Audio Waves -->
+                        <div class="audio-waves" id="audioWaves">
+                            <div class="wave"></div>
+                            <div class="wave"></div>
+                            <div class="wave"></div>
+                            <div class="wave"></div>
+                            <div class="wave"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Transcript -->
+                <div class="transcript-container glass-morphism">
+                    <div class="transcript-header">
+                        <h3>Conversation</h3>
+                        <button onclick="clearTranscript()" class="clear-button">Clear</button>
+                    </div>
+                    <div class="transcript-content" id="transcript">
+                        <div class="transcript-message assistant">
+                            <strong>Assistant:</strong> Hi! Click the microphone and speak to start searching for hotels.
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Instructions -->
+                <div class="voice-instructions glass-morphism">
+                    <h4>📌 How to use:</h4>
+                    <ol>
+                        <li>Click the microphone button to start</li>
+                        <li>Speak naturally about what you're looking for</li>
+                        <li>Wait for the AI response</li>
+                        <li>Click again to ask another question</li>
+                    </ol>
+                    <p class="voice-note">💡 <strong>Tip:</strong> Try saying "Show me luxury hotels in Colombo" or "Find budget-friendly beach resorts"</p>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <script src="voice.js"></script>
+</body>
+</html>

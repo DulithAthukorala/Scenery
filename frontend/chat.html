@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Chat - Scenery AI</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <!-- Navigation -->
+    <nav class="navbar glass-morphism">
+        <div class="nav-content">
+            <a href="index.html" class="nav-brand">
+                <svg class="brand-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <circle cx="12" cy="12" r="10"/>
+                    <polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76"/>
+                </svg>
+                <span class="gradient-text">Scenery</span>
+            </a>
+            <div class="nav-links">
+                <a href="index.html" class="nav-link">Home</a>
+                <a href="chat.html" class="nav-link active">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+                    </svg>
+                    Chat
+                </a>
+                <a href="voice.html" class="nav-link">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
+                        <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
+                        <line x1="12" y1="19" x2="12" y2="23"/>
+                        <line x1="8" y1="23" x2="16" y2="23"/>
+                    </svg>
+                    Voice
+                </a>
+                <a href="search.html" class="nav-link">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="11" cy="11" r="8"/>
+                        <path d="m21 21-4.35-4.35"/>
+                    </svg>
+                    Search
+                </a>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Main Content -->
+    <main class="main-content">
+        <div class="chat-page fade-in">
+            <div class="chat-container">
+                <!-- Chat Header -->
+                <div class="chat-header glass-morphism">
+                    <div class="chat-header-content">
+                        <div class="chat-icon">
+                            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M12 3l1.545 4.757h5l-4.045 2.936 1.545 4.757L12 12.514 7.955 15.45l1.545-4.757L5.455 7.757h5L12 3z"/>
+                            </svg>
+                        </div>
+                        <div>
+                            <h1 class="chat-title">AI Hotel Assistant</h1>
+                            <p class="chat-subtitle">Ask me anything about hotels in Sri Lanka</p>
+                        </div>
+                    </div>
+                    <div class="status-indicator">
+                        <div class="status-dot"></div>
+                        <span>Online</span>
+                    </div>
+                </div>
+
+                <!-- Chat Messages -->
+                <div class="chat-messages" id="chatMessages">
+                    <div class="message assistant slide-in">
+                        <div class="message-avatar">
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
+                                <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+                            </svg>
+                        </div>
+                        <div class="message-content">
+                            <div class="message-header">
+                                <span class="message-role">AI Assistant</span>
+                                <span class="message-time" id="initialTime"></span>
+                            </div>
+                            <div class="message-body">
+                                <p class="response-text">👋 Hi! I'm your AI hotel assistant. Ask me anything about hotels in Sri Lanka - I can help you find the perfect place to stay!</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Suggested Queries -->
+                <div class="suggested-queries" id="suggestedQueries">
+                    <p class="suggested-label">Try asking:</p>
+                    <div class="suggestions-grid">
+                        <button class="suggestion-chip glass-morphism" onclick="setSuggestion(this)">Show me luxury hotels in Colombo</button>
+                        <button class="suggestion-chip glass-morphism" onclick="setSuggestion(this)">Find budget-friendly beach resorts</button>
+                        <button class="suggestion-chip glass-morphism" onclick="setSuggestion(this)">Hotels near Kandy with good ratings</button>
+                        <button class="suggestion-chip glass-morphism" onclick="setSuggestion(this)">Best hotels for families in Galle</button>
+                    </div>
+                </div>
+
+                <!-- Chat Input -->
+                <div class="chat-input-container glass-morphism">
+                    <form class="chat-input-form" id="chatForm">
+                        <input
+                            type="text"
+                            id="chatInput"
+                            class="chat-input"
+                            placeholder="Ask about hotels in Sri Lanka..."
+                            autocomplete="off"
+                        />
+                        <button type="submit" class="send-button" id="sendButton">
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <line x1="22" y1="2" x2="11" y2="13"/>
+                                <polygon points="22 2 15 22 11 13 2 9 22 2"/>
+                            </svg>
+                        </button>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <script src="chat.js"></script>
+</body>
+</html>

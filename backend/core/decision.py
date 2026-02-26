@@ -266,34 +266,50 @@ async def handle_query(user_query: str, mode: str = "text") -> Dict[str, Any]:
                 extra_msg=f"I couldn't map '{slots.location}' to a supported city.",
             )
 
-        data = await get_hotel_insights(
-            geoId=str(geo.geo_id),
-            checkIn=slots.check_in.isoformat(),
-            checkOut=slots.check_out.isoformat(),
-            adults=getattr(slots, "adults", None) or 2,
-            rooms=getattr(slots, "rooms", None) or 1,
-            priceMin=getattr(slots, "price_min", None),
-            priceMax=getattr(slots, "price_max", None),
-            rating=getattr(slots, "rating", None),
-            user_request=user_query,
-        )
-        
-        # LLM ranking + response
-        ranking = _rank_and_respond(
-            hotels=data.get("results", []),
-            user_query=user_query,
-            mode=mode,
-        )
-        data["ranking"] = ranking
+        try:
+            data = await get_hotel_insights(
+                geoId=str(geo.geo_id),
+                checkIn=slots.check_in,
+                checkOut=slots.check_out,
+                adults=getattr(slots, "adults", None) or 2,
+                rooms=getattr(slots, "rooms", None) or 1,
+                priceMin=getattr(slots, "price_min", None),
+                priceMax=getattr(slots, "price_max", None),
+                rating=getattr(slots, "rating", None),
+                user_request=user_query,
+            )
+            
+            # Debug: Check what we got back
+            print(f"DEBUG: Data received from get_hotel_insights: {data}")
+            print(f"DEBUG: Number of results: {len(data.get('results', []))}")
+            
+            # LLM ranking + response
+            hotels_list = data.get("results", [])
+            ranking = _rank_and_respond(
+                hotels=hotels_list,
+                user_query=user_query,
+                mode=mode,
+            )
+            data["ranking"] = ranking
 
-        return {
-            "intent": intent,
-            "confidence": confidence,
-            "action": "RAPIDAPI",
-            "slots": asdict(slots),
-            "geo": {"geoId": geo.geo_id, "city": geo.matched_city, "reason": geo.reason},
-            "data": data,
-        }
+            return {
+                "intent": intent,
+                "confidence": confidence,
+                "action": "RAPIDAPI",
+                "slots": asdict(slots),
+                "geo": {"geoId": geo.geo_id, "city": geo.matched_city, "reason": geo.reason},
+                "data": data,
+            }
+        except Exception as e:
+            return {
+                "intent": intent,
+                "confidence": confidence,
+                "action": "RAPIDAPI_ERROR",
+                "slots": asdict(slots),
+                "geo": {"geoId": geo.geo_id, "city": geo.matched_city, "reason": geo.reason},
+                "message": f"Sorry, I couldn't fetch live prices right now. Error: {str(e)}",
+                "error": str(e),
+            }
 
     # ----------------------------
     # 4) Fallback

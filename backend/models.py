@@ -1,8 +1,9 @@
 from google import genai
+from google.genai import types
 
 from backend.config import GEMINI_API_KEY, GEMINI_MODEL
 
-# Create ONE client for the whole app
+# Configure the API key
 client = genai.Client(api_key=GEMINI_API_KEY)
 
 
@@ -12,6 +13,6 @@ def generate_text(prompt: str) -> str:
     """
     response = client.models.generate_content(
         model=GEMINI_MODEL,
-        contents=prompt,
+        contents=prompt
     )
     return response.text or ""
