@@ -33,17 +33,24 @@ def normalize_tripadvisor_hotels(raw: Dict[str, Any], limit: int = 10) -> List[D
         if not isinstance(h, dict):
             continue
 
+        hotel_id = h.get("id")
         title = h.get("title") or h.get("name")
+        if not title:
+            title = f"Hotel {hotel_id}" if hotel_id is not None else "Hotel"
         rating = _safe_get(h, ["bubbleRating", "rating"])
         reviews = _safe_get(h, ["bubbleRating", "count"])
         price = h.get("priceForDisplay") or _safe_get(h, ["price", "display"])
         provider = h.get("provider")
         is_sponsored = h.get("isSponsored")
+        location = h.get("secondaryInfo") or _safe_get(h, ["cardPhotos", "urlTemplate"])
 
 
         out.append(
             {
+                "id": str(hotel_id) if hotel_id is not None else None,
+                "name": title,
                 "title": title,
+                "location": location,
                 "rating": rating,
                 "reviews": reviews,
                 "price": price,

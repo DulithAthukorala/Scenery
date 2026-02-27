@@ -1,5 +1,6 @@
 // Configuration
 const API_BASE_URL = 'http://localhost:8000';
+const SESSION_STORAGE_KEY = 'scenery_session_id';
 
 // Clear filters
 function clearFilters() {
@@ -22,7 +23,7 @@ document.getElementById('searchForm').addEventListener('submit', async (e) => {
     const rating = document.getElementById('rating').value;
     const priceMin = document.getElementById('priceMin').value;
     const priceMax = document.getElementById('priceMax').value;
-    const userRequest = document.getElementById('userRequest').value;
+    const userRequest = document.getElementById('userRequest').value.trim();
     
     if (!location) {
         showError('Please select a location');
@@ -46,6 +47,14 @@ document.getElementById('searchForm').addEventListener('submit', async (e) => {
     `;
     
     try {
+        const sessionId = getOrCreateSessionId();
+        const queryParts = [userRequest || 'Find hotels'];
+        queryParts.push(`in ${location}`);
+        if (rating) queryParts.push(`rating ${rating}+`);
+        if (priceMin) queryParts.push(`minimum price ${priceMin}`);
+        if (priceMax) queryParts.push(`maximum price ${priceMax}`);
+        const query = queryParts.join(', ');
+
         // Use the chat endpoint which intelligently routes to local DB or RapidAPI
         const response = await fetch(`${API_BASE_URL}/chat`, {
             method: 'POST',
@@ -53,8 +62,9 @@ document.getElementById('searchForm').addEventListener('submit', async (e) => {
                 'Content-Type': 'application/json',
             },
             body: JSON.stringify({
-                query: userRequest,
-                mode: 'text'
+                query,
+                mode: 'text',
+                session_id: sessionId
             })
         });
         
@@ -76,24 +86,30 @@ document.getElementById('searchForm').addEventListener('submit', async (e) => {
 // Display results
 function displayResults(data) {
     const resultsContainer = document.getElementById('resultsContainer');
-    
+
     // Handle different response structures from chat endpoint
     const responseData = data.data || {};
+
     // Check if this is an error or ask response
     if (data.action === 'ASK_LOCATION' || data.action === 'ASK_DATES') {
         showError(data.message || 'Please provide more information');
         return;
     }
-    
-    let html = `
-        <div class="results-header">
-            <h2>Found ${hotels.length} hotels</h2>
-            ${llmResponse ? `<p class="ai-insights">${escapeHtml(llmResponse)}</p>` : ''}
-            ${data.action === 'RAPIDAPI' ? '<p class="live-prices-badge">🔴 Live Prices</p>'
+
+    if (data.action === 'RAPIDAPI_ERROR') {
+        showError(data.message || 'Could not fetch live prices right now.');
+        return;
+    }
+
+    const ranking = responseData.ranking || {};
+    const hotels = ranking.ranked_hotels || responseData.results || [];
+    const insights = ranking.llm_response || 'Here are your best matching hotels.';
+
     let html = `
         <div class="results-header">
             <h2>Found ${hotels.length} hotels</h2>
             ${insights ? `<p class="ai-insights">${escapeHtml(insights)}</p>` : ''}
+            ${data.action === 'RAPIDAPI' ? '<p class="live-prices-badge">🔴 Live Prices</p>' : ''}
         </div>
     `;
     
@@ -130,7 +146,7 @@ function displayResults(data) {
                                 <line x1="12" y1="1" x2="12" y2="23"/>
                                 <path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>
                             </svg>
-                            $${hotel.price} per night
+                            ${escapeHtml(formatPriceLkr(hotel.price))} per night
                         </div>
                     ` : ''}
                     
@@ -166,6 +182,36 @@ function displayResults(data) {
     
     resultsContainer.innerHTML = html;
     resultsContainer.style.display = 'flex';
+}
+
+function formatPriceLkr(price) {
+    const raw = String(price ?? '').trim();
+    if (!raw) return '';
+
+    if (/(lkr|rs\.?|රු)/i.test(raw)) {
+        return raw;
+    }
+
+    const numeric = Number(raw.replace(/,/g, ''));
+    if (!Number.isNaN(numeric)) {
+        return `LKR ${numeric.toLocaleString('en-US')}`;
+    }
+
+    return `LKR ${raw}`;
+}
+
+function getOrCreateSessionId() {
+    const existing = localStorage.getItem(SESSION_STORAGE_KEY);
+    if (existing) {
+        return existing;
+    }
+
+    const generated = (window.crypto && typeof window.crypto.randomUUID === 'function')
+        ? window.crypto.randomUUID()
+        : `sess-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+
+    localStorage.setItem(SESSION_STORAGE_KEY, generated);
+    return generated;
 }
 
 // Show error

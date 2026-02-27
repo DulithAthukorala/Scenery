@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import inspect
 import logging
 import time
 from contextlib import suppress
 from typing import AsyncIterator, Optional, Callable, Any
+from uuid import uuid4
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from fastapi.encoders import jsonable_encoder
@@ -13,6 +15,7 @@ from starlette.websockets import WebSocketState
 
 from backend.config import ELEVEN_API_KEY, ELEVEN_STT_MODEL_ID, ELEVEN_STT_SAMPLE_RATE
 from backend.services.eleven_stt import ElevenLabsSTT, ElevenSTTConfig
+from backend.services.conversation_memory import get_session_context, save_session_turn
 import backend.core.decision as decision_mod  # ✅ dynamic access
 
 router = APIRouter(prefix="/voice", tags=["voice"])
@@ -46,10 +49,42 @@ async def _safe_send_json(websocket: WebSocket, payload: dict, *, label: str) ->
         return False
 
 
+def _extract_response_text(payload: dict) -> str:
+    data = payload.get("data") if isinstance(payload.get("data"), dict) else {}
+    ranking = data.get("ranking") if isinstance(data.get("ranking"), dict) else {}
+
+    llm_response = ranking.get("llm_response")
+    if isinstance(llm_response, str) and llm_response.strip():
+        return llm_response.strip()
+
+    message = payload.get("message")
+    if isinstance(message, str) and message.strip():
+        return message.strip()
+
+    return "I couldn't generate a response right now. Please try again."
+
+
+def _extract_hotels(payload: dict) -> list:
+    data = payload.get("data") if isinstance(payload.get("data"), dict) else {}
+    ranking = data.get("ranking") if isinstance(data.get("ranking"), dict) else {}
+
+    ranked_hotels = ranking.get("ranked_hotels")
+    if isinstance(ranked_hotels, list):
+        return ranked_hotels
+
+    results = data.get("results")
+    if isinstance(results, list):
+        return results
+
+    return []
+
+
 @router.websocket("/stream")
 async def voice_stream(websocket: WebSocket):
     await websocket.accept()
-    logger.info("voice_stream_connected")
+    session_id = (websocket.query_params.get("session_id") or "").strip() or str(uuid4())
+    session_context = await get_session_context(session_id)
+    logger.info("voice_stream_connected session_id=%s", session_id)
 
     if not ELEVEN_API_KEY:
         await _safe_send_json(websocket, {"type": "error", "message": "ELEVEN_API_KEY missing"}, label="missing_api_key")
@@ -64,7 +99,7 @@ async def voice_stream(websocket: WebSocket):
     decision_called = False
 
     async def call_decision_and_respond(final_text: str) -> None:
-        nonlocal decision_called
+        nonlocal decision_called, session_context
         if decision_called:
             return
         decision_called = True
@@ -76,15 +111,44 @@ async def voice_stream(websocket: WebSocket):
         try:
             logger.info("about_to_call_decision text=%r", final_text)
             decision_fn = _get_decision_fn()
-            result = decision_fn(final_text, mode="voice")
+            result = decision_fn(final_text, mode="voice", context=session_context)
             if inspect.isawaitable(result):
                 result = await result
+
+            response_text = _extract_response_text(result)
+            hotels = _extract_hotels(result)
+            session_context = await save_session_turn(
+                session_id=session_id,
+                user_text=final_text,
+                assistant_text=response_text,
+                result_payload=result,
+                existing_context=session_context,
+            )
+
             elapsed_ms = int((time.perf_counter() - started) * 1000)
             logger.info("decision_completed elapsed_ms=%d", elapsed_ms)
             payload = {
                 "type": "assistant_response",
-                "result": jsonable_encoder(result),
-                "meta": {"decision_ms": elapsed_ms, "status": "ok"},
+                "result": jsonable_encoder(
+                    {
+                        **result,
+                        "response": response_text,
+                        "hotels": hotels,
+                        "session_id": session_id,
+                        "conversation_id": session_context.get("conversation_id"),
+                        "memory": {
+                            "enabled": bool(session_context.get("memory_enabled")),
+                            "turn_events": len(session_context.get("turns") or []),
+                        },
+                    }
+                ),
+                "meta": {
+                    "decision_ms": elapsed_ms,
+                    "status": "ok",
+                    "session_id": session_id,
+                    "conversation_id": session_context.get("conversation_id"),
+                    "memory_enabled": bool(session_context.get("memory_enabled")),
+                },
             }
         except Exception as exc:
             elapsed_ms = int((time.perf_counter() - started) * 1000)
@@ -118,15 +182,31 @@ async def voice_stream(websocket: WebSocket):
     async def receiver_from_client():
         try:
             while True:
-                chunk = await websocket.receive_bytes()
+                message = await websocket.receive()
 
-                # ✅ End-of-audio marker (your test client sends b"")
-                if chunk == b"":
-                    client_audio_done.set()
-                    logger.info("received_end_of_audio_marker")
+                if message.get("type") == "websocket.disconnect":
+                    client_disconnected.set()
                     break
 
-                await audio_q.put(chunk)
+                if message.get("bytes") is not None:
+                    chunk = message.get("bytes") or b""
+                    if chunk == b"":
+                        client_audio_done.set()
+                        logger.info("received_end_of_audio_marker")
+                        break
+                    await audio_q.put(chunk)
+                    continue
+
+                if message.get("text") is not None:
+                    try:
+                        payload = json.loads(message.get("text") or "{}")
+                    except json.JSONDecodeError:
+                        payload = {}
+
+                    if payload.get("type") == "audio_end":
+                        client_audio_done.set()
+                        logger.info("received_audio_end_text_message")
+                        break
 
         except WebSocketDisconnect:
             client_disconnected.set()

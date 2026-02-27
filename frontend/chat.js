@@ -1,5 +1,6 @@
 // Configuration
 const API_BASE_URL = 'http://localhost:8000';
+const SESSION_STORAGE_KEY = 'scenery_session_id';
 
 // Initialize
 document.addEventListener('DOMContentLoaded', () => {
@@ -53,6 +54,8 @@ document.getElementById('chatForm').addEventListener('submit', async (e) => {
     
     // Show typing indicator
     showTypingIndicator();
+
+    const sessionId = getOrCreateSessionId();
     
     try {
         const response = await fetch(`${API_BASE_URL}/chat`, {
@@ -62,7 +65,8 @@ document.getElementById('chatForm').addEventListener('submit', async (e) => {
             },
             body: JSON.stringify({
                 query: message,
-                mode: 'text'
+                mode: 'text',
+                session_id: sessionId
             })
         });
         
@@ -71,13 +75,24 @@ document.getElementById('chatForm').addEventListener('submit', async (e) => {
         }
         
         const data = await response.json();
+        const totalMs = response.headers.get('X-Total-Ms');
+        const decisionMs = response.headers.get('X-Decision-Ms');
+        const action = response.headers.get('X-Action');
+        const returnedSessionId = response.headers.get('X-Session-Id') || data.session_id || sessionId;
+        if (returnedSessionId) {
+            localStorage.setItem(SESSION_STORAGE_KEY, returnedSessionId);
+        }
+        console.log('chat_timing', { totalMs, decisionMs, action, sessionId: returnedSessionId });
         
         // Remove typing indicator
         removeTypingIndicator();
         
         // Add assistant message
-        const content = data.response || JSON.stringify(data, null, 2);
-        addMessage('assistant', content, data);
+        const content = typeof data.response === 'string' && data.response.trim()
+            ? data.response
+            : 'I could not generate a response right now. Please try again.';
+        const assistantData = Array.isArray(data.hotels) ? { hotels: data.hotels } : null;
+        addMessage('assistant', content, assistantData);
         
     } catch (error) {
         removeTypingIndicator();
@@ -137,7 +152,7 @@ function formatHotelsResponse(text, hotels) {
                 ${hotel.rating ? `<span class="hotel-rating">⭐ ${hotel.rating}</span>` : ''}
             </div>
             ${hotel.location ? `<p class="hotel-location">📍 ${escapeHtml(hotel.location)}</p>` : ''}
-            ${hotel.price ? `<p class="hotel-price">💰 $${hotel.price}</p>` : ''}
+            ${hotel.price ? `<p class="hotel-price">💰 ${escapeHtml(formatPriceLkr(hotel.price))}</p>` : ''}
             ${hotel.description ? `<p class="hotel-description">${escapeHtml(hotel.description)}</p>` : ''}
         </div>
     `).join('');
@@ -150,6 +165,36 @@ function formatHotelsResponse(text, hotels) {
             </div>
         </div>
     `;
+}
+
+function formatPriceLkr(price) {
+    const raw = String(price ?? '').trim();
+    if (!raw) return '';
+
+    if (/(lkr|rs\.?|රු)/i.test(raw)) {
+        return raw;
+    }
+
+    const numeric = Number(raw.replace(/,/g, ''));
+    if (!Number.isNaN(numeric)) {
+        return `LKR ${numeric.toLocaleString('en-US')}`;
+    }
+
+    return `LKR ${raw}`;
+}
+
+function getOrCreateSessionId() {
+    const existing = localStorage.getItem(SESSION_STORAGE_KEY);
+    if (existing) {
+        return existing;
+    }
+
+    const generated = (window.crypto && typeof window.crypto.randomUUID === 'function')
+        ? window.crypto.randomUUID()
+        : `sess-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+
+    localStorage.setItem(SESSION_STORAGE_KEY, generated);
+    return generated;
 }
 
 // Show typing indicator

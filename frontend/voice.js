@@ -1,5 +1,6 @@
 // Configuration
 const WS_URL = 'ws://localhost:8000/voice/stream';
+const SESSION_STORAGE_KEY = 'scenery_session_id';
 
 let websocket = null;
 let mediaRecorder = null;
@@ -18,7 +19,9 @@ const audioWaves = document.getElementById('audioWaves');
 // Initialize WebSocket connection
 function connectWebSocket() {
     try {
-        websocket = new WebSocket(WS_URL);
+        const sessionId = getOrCreateSessionId();
+        const wsUrl = `${WS_URL}?session_id=${encodeURIComponent(sessionId)}`;
+        websocket = new WebSocket(wsUrl);
         
         websocket.onopen = () => {
             console.log('WebSocket connected');
@@ -66,9 +69,20 @@ function connectWebSocket() {
 // Handle WebSocket messages
 function handleWebSocketMessage(data) {
     console.log('Received:', data);
+
+    const extractAssistantPayload = (result) => {
+        const ranking = result?.data?.ranking || {};
+        const text = result?.response || ranking.llm_response || result?.message || '';
+        const hotels = result?.hotels || ranking.ranked_hotels || result?.data?.results || [];
+        return {
+            text,
+            hotels: Array.isArray(hotels) ? hotels : []
+        };
+    };
     
     switch (data.type) {
         case 'transcript':
+        case 'final_text':
             if (data.text) {
                 addTranscript('user', data.text);
             }
@@ -82,6 +96,20 @@ function handleWebSocketMessage(data) {
                 addHotelsToTranscript(data.hotels);
             }
             break;
+
+        case 'assistant_response': {
+            const payload = extractAssistantPayload(data.result || {});
+            if (payload.text) {
+                addTranscript('assistant', payload.text);
+            }
+            if (payload.hotels.length > 0) {
+                addHotelsToTranscript(payload.hotels);
+            }
+            if (data.meta) {
+                console.log('voice_timing', data.meta);
+            }
+            break;
+        }
             
         case 'audio':
             // Handle audio playback if implemented
@@ -234,7 +262,7 @@ function addHotelsToTranscript(hotels) {
                     ${hotel.rating ? `<span class="hotel-rating">⭐ ${hotel.rating}</span>` : ''}
                 </div>
                 ${hotel.location ? `<p class="hotel-location">📍 ${escapeHtml(hotel.location)}</p>` : ''}
-                ${hotel.price ? `<p class="hotel-price">💰 $${hotel.price}</p>` : ''}
+                ${hotel.price ? `<p class="hotel-price">💰 ${escapeHtml(formatPriceLkr(hotel.price))}</p>` : ''}
             </div>
         `;
     });
@@ -259,6 +287,36 @@ function escapeHtml(text) {
     const div = document.createElement('div');
     div.textContent = text;
     return div.innerHTML;
+}
+
+function formatPriceLkr(price) {
+    const raw = String(price ?? '').trim();
+    if (!raw) return '';
+
+    if (/(lkr|rs\.?|රු)/i.test(raw)) {
+        return raw;
+    }
+
+    const numeric = Number(raw.replace(/,/g, ''));
+    if (!Number.isNaN(numeric)) {
+        return `LKR ${numeric.toLocaleString('en-US')}`;
+    }
+
+    return `LKR ${raw}`;
+}
+
+function getOrCreateSessionId() {
+    const existing = localStorage.getItem(SESSION_STORAGE_KEY);
+    if (existing) {
+        return existing;
+    }
+
+    const generated = (window.crypto && typeof window.crypto.randomUUID === 'function')
+        ? window.crypto.randomUUID()
+        : `sess-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+
+    localStorage.setItem(SESSION_STORAGE_KEY, generated);
+    return generated;
 }
 
 // Initialize on page load

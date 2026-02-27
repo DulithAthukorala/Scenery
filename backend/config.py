@@ -18,6 +18,11 @@ ELEVEN_API_KEY = os.getenv("ELEVEN_API_KEY", "")
 ELEVEN_STT_MODEL_ID = os.getenv("ELEVEN_STT_MODEL_ID", "scribe_v2_realtime")
 ELEVEN_STT_SAMPLE_RATE = int(os.getenv("ELEVEN_STT_SAMPLE_RATE", "16000"))
 
+REDIS_ENABLED = os.getenv("REDIS_ENABLED", "true").strip().lower() in ("1", "true", "yes", "on")
+REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
+REDIS_SESSION_TTL_SECONDS = int(os.getenv("REDIS_SESSION_TTL_SECONDS", "1800"))
+REDIS_MAX_TURNS = int(os.getenv("REDIS_MAX_TURNS", "8"))
+
 if not GEMINI_API_KEY:
     raise RuntimeError(f"GEMINI_API_KEY is not set (loaded from: {ENV_PATH})")
 

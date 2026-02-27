@@ -217,15 +217,9 @@ async def search_hotels(
     if cached is not None:
         return cached
 
-    # Debug: Log the request
-    print(f"DEBUG: RapidAPI Request URL: {url}")
-    print(f"DEBUG: RapidAPI Params: {params}")
-
-    async with httpx.AsyncClient(timeout=30) as client:  # create async client with 30s timeout & close
+    timeout = httpx.Timeout(timeout=15.0, connect=3.0)
+    async with httpx.AsyncClient(timeout=timeout) as client:
         r = await client.get(url, headers=_headers(), params=params)
-
-    print(f"DEBUG: RapidAPI Response Status: {r.status_code}")
-    print(f"DEBUG: RapidAPI Response: {r.text[:500]}")  # First 500 chars
 
     if r.status_code >= 400:
         # Try JSON; fallback to text

@@ -3,6 +3,7 @@ This module implements hotel data retrieval from a local SQLite database (includ
 """
 from __future__ import annotations
 
+import json
 import re
 import sqlite3
 from pathlib import Path
@@ -12,6 +13,8 @@ from typing import Any, Dict, List, Optional
 DB_PATH = Path(__file__).resolve().parents[1] / "data" / "hotels.db"
 # re compile amounts from values like "LKR 25,000"
 _PRICE_RE = re.compile(r"(\d[\d,]*)")
+_LUXURY_HINT_RE = re.compile(r"\b(luxury|premium|upscale|high[-\s]?end|5[-\s]?star|five[-\s]?star)\b", re.IGNORECASE)
+_FAMILY_HINT_RE = re.compile(r"\b(family[-\s]?friendly|family|kids?|children|child)\b", re.IGNORECASE)
 
 
 # DB helpers
@@ -29,6 +32,50 @@ def _extract_price_number(price_text: Optional[str]) -> Optional[int]:
     if not match:
         return None
     return int(match.group(1).replace(",", ""))
+
+
+def _safe_text(value: Any) -> str:
+    if isinstance(value, str):
+        return value.lower()
+    return ""
+
+
+def _preference_score(row: sqlite3.Row, user_request: str) -> int:
+    request = user_request or ""
+    wants_luxury = bool(_LUXURY_HINT_RE.search(request))
+    wants_family = bool(_FAMILY_HINT_RE.search(request))
+
+    if not (wants_luxury or wants_family):
+        return 0
+
+    content_parts = [
+        _safe_text(row["name"]),
+        _safe_text(row["primary_info"]),
+        _safe_text(row["secondary_info"]),
+        _safe_text(row["description"]),
+    ]
+
+    amenities_raw = row["amenities_json"]
+    if isinstance(amenities_raw, str) and amenities_raw.strip():
+        try:
+            amenities_obj = json.loads(amenities_raw)
+            if isinstance(amenities_obj, list):
+                content_parts.append(" ".join(str(item).lower() for item in amenities_obj))
+            else:
+                content_parts.append(str(amenities_obj).lower())
+        except (TypeError, json.JSONDecodeError):
+            content_parts.append(amenities_raw.lower())
+
+    content = " ".join(part for part in content_parts if part)
+    if not content:
+        return 0
+
+    score = 0
+    if wants_luxury:
+        score += len(_LUXURY_HINT_RE.findall(content))
+    if wants_family:
+        score += len(_FAMILY_HINT_RE.findall(content))
+    return score
 
 # Convert DB to standardized dict format and remove unnecessary fields (faster llm ranking)
 def serialize_hotel(row: sqlite3.Row) -> Dict[str, Any]:
@@ -62,7 +109,7 @@ def get_hotel_insights_localdb(
 
     where_sql = " AND ".join(filters)
     sql = (
-        "SELECT id, name, city, price_range, avg_review "
+        "SELECT id, name, city, price_range, avg_review, review_count, primary_info, secondary_info, description, amenities_json "
         f"FROM hotels WHERE {where_sql} "
         "ORDER BY avg_review DESC, review_count DESC "
         "LIMIT ?"
@@ -77,7 +124,7 @@ def get_hotel_insights_localdb(
     except sqlite3.Error:
         hotels: List[Dict[str, Any]] = []
     else:
-        hotels = []
+        ranked_hotels: List[tuple[int, float, int, Dict[str, Any]]] = []
         for row in rows:
             hotel = serialize_hotel(row) # remove unnecessary fields/ DICT conversion
 
@@ -90,9 +137,13 @@ def get_hotel_insights_localdb(
                 if priceMax is not None and numeric_price > priceMax:
                     continue
 
-            hotels.append(hotel)
-            if len(hotels) >= limit:
-                break
+            pref_score = _preference_score(row, user_request)
+            rating_value = float(row["avg_review"] or 0.0)
+            review_count = int(row["review_count"] or 0)
+            ranked_hotels.append((pref_score, rating_value, review_count, hotel))
+
+        ranked_hotels.sort(key=lambda x: (x[0], x[1], x[2]), reverse=True)
+        hotels = [item[3] for item in ranked_hotels[:limit]]
 
     return {
         "source": "local_db",

@@ -15,6 +15,7 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["*"],  # Allows all methods
     allow_headers=["*"],  # Allows all headers
+    expose_headers=["X-Total-Ms", "X-Decision-Ms", "X-Action", "X-Session-Id"],
 )
 
 app.include_router(health.router) # health check endpoint (GET /health)
