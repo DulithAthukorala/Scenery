@@ -28,11 +28,11 @@ class Slots:
     price_max: Optional[int] = None
 
 
-# Start with a list; later load from DB + cache it.
+# Must stay in sync with CITY_GEOIDS in location_geoid_converter.py and hotels.db
 SUPPORTED_LOCATIONS = [
-    "Colombo", "Galle", "Kandy", "Ella", "Mirissa", "Unawatuna", "Hikkaduwa",
-    "Negombo", "Nuwara Eliya", "Sigiriya", "Bentota", "Trincomalee", "Arugam Bay",
-    "Tangalle", "Weligama", "Dambulla", "Anuradhapura", "Jaffna", "Pasikudah", "Nilaveli"
+    "Colombo", "Kandy", "Galle", "Ella", "Nuwara Eliya", "Sigiriya",
+    "Mirissa", "Negombo", "Trincomalee", "Arugam Bay", "Jaffna",
+    "Hambantota", "Anuradhapura", "Polonnaruwa", "Chilaw",
 ]
 
 # remove currency words like "lkr", "rs", "rupees" in query

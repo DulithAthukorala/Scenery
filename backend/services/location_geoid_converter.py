@@ -67,3 +67,36 @@ def convert_geo_id(location: str) -> GeoResolveResult:
             return GeoResolveResult(gid, city, "map")
 
     return GeoResolveResult(None, raw, "Could not find a matching geoid for location")
+
+
+# ---------------------------------------------------------------------------
+# Fuzzy city matching (used by decision engine for typo tolerance)
+# ---------------------------------------------------------------------------
+
+
+def fuzzy_match_city(text: str, threshold: int = 72) -> Optional[str]:
+    """
+    Return the best-matching city name from CITY_GEOIDS if the similarity
+    score exceeds *threshold*, else ``None``.
+
+    Uses Levenshtein-based token_set_ratio for robustness against word-order
+    and partial matches (e.g. "nuwara" → "Nuwara Eliya").
+    """
+    from rapidfuzz import fuzz as _fuzz  # lazy import to keep startup fast
+
+    query = _normalize(text)
+    if not query:
+        return None
+
+    best_score = 0
+    best_city: Optional[str] = None
+
+    for city in CITY_GEOIDS:
+        score = _fuzz.token_set_ratio(query, _normalize(city))
+        if score > best_score:
+            best_score = score
+            best_city = city
+
+    if best_score >= threshold and best_city is not None:
+        return best_city
+    return None

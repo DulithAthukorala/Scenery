@@ -15,7 +15,7 @@ from backend.services.keyword_extractor import extract_slots, Slots
 from backend.services.hotel_insights_localdb import get_hotel_insights_localdb
 from backend.services.hotel_insights_rapidapi import get_hotel_insights
 
-from backend.services.location_geoid_converter import convert_geo_id, CITY_GEOIDS
+from backend.services.location_geoid_converter import convert_geo_id, CITY_GEOIDS, fuzzy_match_city
 from backend.models import generate_text
 
 
@@ -26,6 +26,7 @@ logger = logging.getLogger(__name__)
 EXPLORE_LOCAL = "EXPLORE_LOCAL"
 LIVE_PRICES = "LIVE_PRICES"
 NEEDS_DATES = "NEEDS_DATES"
+OFF_TOPIC = "OFF_TOPIC"
 
 LOCAL_SLA_MS = 1000
 RAPIDAPI_SLA_MIN_MS = 2000
@@ -36,11 +37,12 @@ LOCAL_LLM_BUDGET_MS = 900
 
 HOTEL_WORDS = (
     "hotel", "resort", "villa", "guesthouse", "accommodation",
-    "stay", "lodge", "hostel", "apartment"
+    "stay", "lodge", "hostel", "apartment", "room", "rooms",
+    "motel", "inn", "bnb", "b&b", "airbnb",
 )
 
 BOOKING_WORDS = (
-    "price", "prices", "cost", "rate", "rates", "how much",
+    "price", "prices", "cost", "rates", "how much",
     "availability", "available", "vacancy", "rooms available",
     "book", "booking", "reserve",
     "check-in", "check out", "check-out",
@@ -49,11 +51,16 @@ BOOKING_WORDS = (
 )
 
 _DATE_SIGNAL_RE = re.compile(
-    r"(\b\d{4}-\d{2}-\d{2}\b|\bcheck[\s-]?in\b|\bcheck[\s-]?out\b|\btonight\b|\btomorrow\b|\bnext week\b|\bnext month\b)",
+    r"(\b\d{4}-\d{2}-\d{2}\b|\bcheck[\s-]?in\b|\bcheck[\s-]?out\b|\btonight\b|\btomorrow\b|\bnext week\b|\bnext month\b|\bthis weekend\b)",
     re.IGNORECASE,
 ) 
 _NATURAL_DATE_RANGE_RE = re.compile(
     r"\b(?:from\s+)?([a-zA-Z]+\s+\d{1,2}(?:st|nd|rd|th)?(?:\s+\d{4})?|\d{1,2}(?:st|nd|rd|th)?\s+[a-zA-Z]+(?:\s+\d{4})?)\s+(?:to|until|till|\-)\s+([a-zA-Z]+\s+\d{1,2}(?:st|nd|rd|th)?(?:\s+\d{4})?|\d{1,2}(?:st|nd|rd|th)?\s+[a-zA-Z]+(?:\s+\d{4})?)\b",
+    re.IGNORECASE,
+)
+# "check in March 20 check out March 22" / "checkin 2026-03-20 checkout 2026-03-22"
+_CHECKIN_CHECKOUT_RE = re.compile(
+    r"check[\s-]?in\s+(.+?)\s+check[\s-]?out\s+(.+)",
     re.IGNORECASE,
 )
 
@@ -69,9 +76,56 @@ _ISO_DATE_RE = re.compile(r"\b(20\d{2}-\d{2}-\d{2})\b")
 _ADULTS_RE = re.compile(r"(\d+)\s*(adults|adult|people|persons|guests)", re.IGNORECASE)
 _ROOMS_RE = re.compile(r"(\d+)\s*(rooms|room)", re.IGNORECASE)
 _FILTER_HINT_RE = re.compile(
-    r"\b(under|below|less than|up to|above|over|more than|at least|between|budget|cheap|cheaper|affordable|rating|star)\b",
+    r"\b(under|below|less than|up to|above|over|more than|at least|between|budget|cheap|cheaper|affordable|rating|star|luxury|premium|upscale)\b",
     re.IGNORECASE,
 )
+
+# ──────── Off-topic / conversational detection ────────
+_GREETING_RE = re.compile(
+    r"^\s*(hi|hello|hey|good\s*(morning|afternoon|evening)|greetings|yo|sup|howdy)\s*[!?.]*\s*$",
+    re.IGNORECASE,
+)
+_FAREWELL_RE = re.compile(
+    r"^\s*(bye|goodbye|see\s*you|take\s*care|thanks|thank\s*you|cheers|ciao)\s*[!?.]*\s*$",
+    re.IGNORECASE,
+)
+_NON_HOTEL_QUESTION_RE = re.compile(
+    r"\b(weather|restaurant|food|eat|flight|train|bus|taxi|transport|museum|temple|church|mosque|attraction|sightseeing|visa|currency|exchange|map|direction|recipe|joke|song|movie|game|news|sport)\b",
+    re.IGNORECASE,
+)
+_META_QUESTION_RE = re.compile(
+    r"\b(who\s+(are|built|made|created)|what\s+(are you|is your name|time)|how\s+do\s+you\s+work)\b",
+    re.IGNORECASE,
+)
+
+_MONTH_NAMES = {
+    "january", "february", "march", "april", "may", "june",
+    "july", "august", "september", "october", "november", "december",
+    "jan", "feb", "mar", "apr", "jun", "jul", "aug", "sep", "oct", "nov", "dec",
+}
+
+
+def _is_off_topic(query: str) -> bool:
+    """Return True if the query is clearly not about hotels."""
+    q = (query or "").strip()
+    if not q:
+        return False
+    if _GREETING_RE.match(q):
+        return True
+    if _FAREWELL_RE.match(q):
+        return True
+    if _META_QUESTION_RE.search(q):
+        return True
+    # SQL injection / code injection patterns are always off-topic
+    ql = q.lower()
+    if any(kw in ql for kw in ("select *", "drop table", "insert into", "update set", "<script", "alert(", "1=1")):
+        return True
+    has_hotel = _contains_any(q, HOTEL_WORDS)
+    has_booking = _contains_any(q, BOOKING_WORDS)
+    has_city = any(re.search(rf"\b{re.escape(c.lower())}\b", ql) for c in CITY_GEOIDS)
+    if not has_hotel and not has_booking and not has_city and _NON_HOTEL_QUESTION_RE.search(q):
+        return True
+    return False
 
 # helper function to check if any of the keywords are in the text
 def _contains_any(text: str, keywords: Tuple[str, ...]) -> bool:
@@ -83,10 +137,15 @@ def _apply_overrides(pred_intent: str, query: str, slots) -> str:
     """
     Rule layer to stabilize TF-IDF mistakes.
     Priority:
-      1) If dates exist -> LIVE_PRICES
-      2) If booking-like query but missing dates -> NEEDS_DATES
-      3) If hotel-like query -> EXPLORE_LOCAL (unless already live/needs_dates)
+      1) OFF_TOPIC is never overridden
+      2) If dates exist -> LIVE_PRICES
+      3) If booking-like query but missing dates -> NEEDS_DATES
+      4) If hotel-like query -> EXPLORE_LOCAL (unless already live/needs_dates)
     """
+    # Never override off-topic
+    if pred_intent == OFF_TOPIC:
+        return OFF_TOPIC
+
     has_hotel_signal = _contains_any(query, HOTEL_WORDS)
     has_booking_signal = _contains_any(query, BOOKING_WORDS)
 
@@ -184,6 +243,27 @@ def _infer_dates_from_text(text: str) -> tuple[Optional[date], Optional[date]]:
             pass
 
     today = date.today()
+
+    # "check in March 20 check out March 22" / "checkin 2026-03-20 checkout 2026-03-22"
+    checkin_checkout_match = _CHECKIN_CHECKOUT_RE.search(text or "")
+    if checkin_checkout_match:
+        raw_in = checkin_checkout_match.group(1).strip()
+        raw_out = checkin_checkout_match.group(2).strip()
+        # Try ISO first
+        try:
+            d_in = date.fromisoformat(raw_in)
+            d_out = date.fromisoformat(raw_out)
+            return d_in, d_out
+        except ValueError:
+            pass
+        # Try natural date tokens
+        d_in = _parse_natural_date_token(raw_in, today)
+        d_out = _parse_natural_date_token(raw_out, today)
+        if d_in and d_out:
+            if d_out < d_in:
+                d_out = d_out.replace(year=d_out.year + 1)
+            return d_in, d_out
+
     natural_range_match = _NATURAL_DATE_RANGE_RE.search(text or "")
     if natural_range_match:
         first = _parse_natural_date_token(natural_range_match.group(1), today)
@@ -281,24 +361,52 @@ def _try_fast_intent_and_slots(query: str, fallback_location: Optional[str] = No
     if not text:
         return None
 
+    # ── Off-topic detection (before any hotel logic) ──
+    if _is_off_topic(text):
+        slots = Slots()
+        return OFF_TOPIC, 0.99, slots
+
     matched_location = None
+    # 1) Exact match against known city names
     for city in CITY_GEOIDS.keys():
         city_l = city.lower()
         if re.search(rf"\b{re.escape(city_l)}\b", lowered):
             matched_location = city
             break
 
+    # 2) Fuzzy match against known cities (handles typos like "Colmbo" → "Colombo")
     if not matched_location:
-        in_match = re.search(r"\bin\s+([a-zA-Z\s]+)", text)
+        # Try fuzzy on the full text first
+        fuzzy_result = fuzzy_match_city(text)
+        if fuzzy_result:
+            matched_location = fuzzy_result
+
+    # 3) "in <city>" pattern, but exclude month names and common false positives
+    if not matched_location:
+        in_match = re.search(r"\bin\s+([a-zA-Z][a-zA-Z\s]{1,25})", text)
         if in_match:
             raw = in_match.group(1).strip(" ,.")
-            if raw:
-                matched_location = raw.title()
+            # Don't treat month names or common words as locations
+            raw_first_word = raw.split()[0].lower() if raw else ""
+            if raw and raw_first_word not in _MONTH_NAMES and raw_first_word not in (
+                "the", "a", "an", "my", "our", "this", "that", "some", "any",
+                "order", "general", "total", "mind", "case", "fact", "advance",
+            ):
+                # Try fuzzy match on the captured fragment to fix typos
+                fuzzy_frag = fuzzy_match_city(raw)
+                matched_location = fuzzy_frag if fuzzy_frag else raw.title()
 
     if not matched_location and fallback_location:
         matched_location = fallback_location
 
     if not matched_location:
+        # Check if the query has any hotel/booking signal w/o location
+        has_hotel = _contains_any(lowered, HOTEL_WORDS)
+        has_booking = _contains_any(lowered, BOOKING_WORDS)
+        has_filter = _FILTER_HINT_RE.search(lowered)
+        if has_hotel or has_booking or has_filter:
+            # Has hotel intent but no location → we'll handle in main flow
+            pass  # Fall through to return None
         return None
 
     check_in, check_out = _infer_dates_from_text(text)
@@ -665,6 +773,7 @@ async def handle_query(
             and getattr(slots, "location", None)
             and not (getattr(slots, "check_in", None) and getattr(slots, "check_out", None))
             and (_has_local_filter_signal(user_query, slots) or _is_short_followup(user_query))
+            and not _contains_any(user_query.lower(), BOOKING_WORDS)
         ):
             intent = EXPLORE_LOCAL
 
@@ -682,6 +791,37 @@ async def handle_query(
             and _has_local_filter_signal(user_query, slots)
         ):
             intent = EXPLORE_LOCAL
+
+    # ----------------------------
+    # 0) Off-topic / conversational
+    # ----------------------------
+    if intent == OFF_TOPIC:
+        # Friendly response that gently redirects to hotel search
+        if _GREETING_RE.search(user_query):
+            msg = (
+                "Hello! \U0001F44B I'm Scenery, your Sri Lanka hotel assistant. "
+                "Ask me things like:\n"
+                "\u2022 \"Hotels in Colombo\"\n"
+                "\u2022 \"Luxury stays in Ella under 30000 LKR\"\n"
+                "\u2022 \"Book a room in Galle from March 20 to March 22\"\n\n"
+                "How can I help you find the perfect stay?"
+            )
+        elif _FAREWELL_RE.search(user_query):
+            msg = "Goodbye! Have a wonderful trip \U0001F30F. Come back anytime you need hotel help."
+        else:
+            msg = (
+                "I'm specialised in Sri Lanka hotel search. I can help you find hotels, "
+                "compare prices, and check availability across 15 cities.\n\n"
+                "Try asking something like \"Hotels in Kandy\" or "
+                "\"Best places to stay in Mirissa under 20000 LKR\"."
+            )
+        return {
+            "intent": OFF_TOPIC,
+            "confidence": confidence,
+            "action": "FALLBACK",
+            "message": msg,
+            "slots": asdict(slots),
+        }
 
     # ----------------------------
     # 1) Local exploration (SQLite)
@@ -836,6 +976,48 @@ async def handle_query(
             }
         except Exception as e:
             error_text = str(e).strip() or type(e).__name__
+            is_rate_limited = any(kw in error_text.lower() for kw in ("429", "rate limit", "quota", "exceeded"))
+
+            # ----- Graceful fallback to local DB when RapidAPI is exhausted -----
+            if is_rate_limited and getattr(slots, "location", None):
+                logger.info("RapidAPI rate-limited – falling back to local DB for %s", slots.location)
+                try:
+                    data = get_hotel_insights_localdb(
+                        location=slots.location,
+                        user_request=user_query,
+                        rating=getattr(slots, "rating", None),
+                        priceMin=getattr(slots, "price_min", None),
+                        priceMax=getattr(slots, "price_max", None),
+                    )
+                    local_results = data.get("results", [])
+                    llm_response = await _generate_local_llm_response_with_budget(
+                        hotels=local_results,
+                        location=str(getattr(slots, "location", "")),
+                        user_query=user_query,
+                        mode=mode,
+                        timeout_ms=LOCAL_LLM_BUDGET_MS,
+                    )
+                    data["ranking"] = {
+                        "ranked_hotels": local_results[:5],
+                        "llm_response": llm_response,
+                        "mode": mode,
+                        "source": "llm_local_fallback",
+                        "note": "Live pricing unavailable (rate limit). Showing cached local data instead.",
+                    }
+                    total_ms = round((time.perf_counter() - req_start) * 1000, 2)
+                    return {
+                        "intent": intent,
+                        "confidence": confidence,
+                        "action": "LOCAL_DB",
+                        "slots": asdict(slots),
+                        "data": data,
+                        "timing": {"classify_ms": classify_ms, "slot_extract_ms": slot_ms, "total_ms": total_ms},
+                        "sla": {"route": "LOCAL_DB_FALLBACK", "target_max_ms": LOCAL_SLA_MS, "hit": total_ms <= LOCAL_SLA_MS},
+                        "note": "Live pricing unavailable. Showing local cached data instead.",
+                    }
+                except Exception as fallback_err:
+                    logger.warning("Local DB fallback also failed: %s", fallback_err)
+
             total_ms = round((time.perf_counter() - req_start) * 1000, 2)
             timing = {
                 "classify_ms": classify_ms,
@@ -868,6 +1050,12 @@ async def handle_query(
         "intent": pred_intent,
         "confidence": confidence,
         "action": "FALLBACK",
-        "message": "Sorry, I couldn't understand that request.",
+        "message": (
+            "I'm not sure what you're looking for. I can help you:\n"
+            "\u2022 Explore hotels in any of 15 Sri Lankan cities\n"
+            "\u2022 Filter by price range or rating\n"
+            "\u2022 Check live room prices with specific dates\n\n"
+            "Try something like \"Hotels in Galle\" or \"Luxury stays in Colombo\"."
+        ),
         "slots": asdict(slots),
     }
