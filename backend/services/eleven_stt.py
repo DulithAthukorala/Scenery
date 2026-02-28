@@ -5,10 +5,12 @@ from __future__ import annotations
 
 import base64 # convert audio to bas64 for ElevenLabs
 import json # WebSocket messages are sent as JSON text.
+import ssl
 from dataclasses import dataclass
 from typing import AsyncIterator, Dict, Any, Optional
 from urllib.parse import urlencode
 
+import certifi
 import websockets # helps to talk to ElevenLabs real-time
 from websockets.exceptions import ConnectionClosedOK, ConnectionClosed # intentional closing and unintentional closing of erros
 
@@ -56,8 +58,11 @@ class ElevenLabsSTT:
         url = f"{self.WS_URL}?{query}"
         headers = {"xi-api-key": self.cfg.api_key} # authentication for ElevenLabs API
 
+        # Create SSL context with certifi certificates
+        ssl_context = ssl.create_default_context(cafile=certifi.where())
+
         # connect to ElevenLabs
-        async with websockets.connect(url, additional_headers=headers) as ws:
+        async with websockets.connect(url, additional_headers=headers, ssl=ssl_context) as ws:
             # First message -> usually session_started
             first = await ws.recv() # wait for the first message
             yield json.loads(first) # {"message_type": "session_started"}

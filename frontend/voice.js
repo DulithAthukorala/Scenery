@@ -8,6 +8,10 @@ let audioContext = null;
 let isRecording = false;
 let audioChunks = [];
 
+// TTS Audio handling
+let ttsAudioChunks = [];
+let isSpeaking = false;
+
 // DOM Elements
 const micButton = document.getElementById('micButton');
 const micStatus = document.getElementById('micStatus');
@@ -111,8 +115,34 @@ function handleWebSocketMessage(data) {
             break;
         }
             
+        case 'tts_start':
+            console.log('TTS: Starting audio synthesis');
+            ttsAudioChunks = [];
+            isSpeaking = true;
+            micButton.classList.add('speaking');
+            micStatus.textContent = '🔊 Assistant speaking...';
+            audioWaves.classList.add('active');
+            break;
+
+        case 'tts_audio':
+            if (data.audio) {
+                ttsAudioChunks.push(data.audio);
+            }
+            break;
+
+        case 'tts_end':
+            console.log('TTS: Audio synthesis complete, playing...');
+            playTTSAudio();
+            break;
+
+        case 'tts_error':
+            console.error('TTS Error:', data.error);
+            addTranscript('system', `🔇 Audio playback error: ${data.error}`);
+            resetSpeakingState();
+            break;
+            
         case 'audio':
-            // Handle audio playback if implemented
+            // Handle audio playback if implemented (legacy)
             break;
             
         case 'error':
@@ -144,6 +174,12 @@ function updateStatus(status, text) {
 
 // Mic button click handler
 micButton.addEventListener('click', async () => {
+    // Prevent interaction while assistant is speaking
+    if (isSpeaking) {
+        console.log('Cannot record while assistant is speaking');
+        return;
+    }
+    
     if (isRecording) {
         stopRecording();
     } else {
@@ -317,6 +353,79 @@ function getOrCreateSessionId() {
 
     localStorage.setItem(SESSION_STORAGE_KEY, generated);
     return generated;
+}
+
+// TTS Audio Playback Functions
+async function playTTSAudio() {
+    if (ttsAudioChunks.length === 0) {
+        console.warn('No TTS audio chunks to play');
+        resetSpeakingState();
+        return;
+    }
+
+    try {
+        // Combine all base64 chunks into one string
+        const combinedBase64 = ttsAudioChunks.join('');
+        
+        // Decode base64 to binary
+        const binaryString = atob(combinedBase64);
+        const bytes = new Uint8Array(binaryString.length);
+        for (let i = 0; i < binaryString.length; i++) {
+            bytes[i] = binaryString.charCodeAt(i);
+        }
+
+        // Create audio context if not exists or closed
+        if (!audioContext || audioContext.state === 'closed') {
+            audioContext = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 });
+        }
+
+        // Decode PCM audio (16kHz, 16-bit)
+        const audioBuffer = await decodePCMAudio(bytes.buffer, 16000);
+        
+        // Create buffer source and play
+        const source = audioContext.createBufferSource();
+        source.buffer = audioBuffer;
+        source.connect(audioContext.destination);
+        
+        source.onended = () => {
+            console.log('TTS playback finished');
+            resetSpeakingState();
+        };
+        
+        source.start(0);
+        console.log(`Playing TTS audio: ${bytes.length} bytes, duration: ${audioBuffer.duration.toFixed(2)}s`);
+        
+    } catch (error) {
+        console.error('Error playing TTS audio:', error);
+        addTranscript('system', '🔇 Failed to play audio response');
+        resetSpeakingState();
+    }
+}
+
+async function decodePCMAudio(arrayBuffer, sampleRate) {
+    // PCM is 16-bit little-endian
+    const dataView = new DataView(arrayBuffer);
+    const numSamples = arrayBuffer.byteLength / 2; // 16-bit = 2 bytes per sample
+    
+    // Create AudioBuffer
+    const audioBuffer = audioContext.createBuffer(1, numSamples, sampleRate);
+    const channelData = audioBuffer.getChannelData(0);
+    
+    // Convert 16-bit PCM to float32 (-1.0 to 1.0)
+    for (let i = 0; i < numSamples; i++) {
+        const int16 = dataView.getInt16(i * 2, true); // true = little-endian
+        channelData[i] = int16 / 32768.0; // Normalize to -1.0 to 1.0
+    }
+    
+    return audioBuffer;
+}
+
+function resetSpeakingState() {
+    isSpeaking = false;
+    micButton.classList.remove('speaking');
+    audioWaves.classList.remove('active');
+    micStatus.textContent = 'Click to speak';
+    ttsAudioChunks = [];
 }
 
 // Initialize on page load

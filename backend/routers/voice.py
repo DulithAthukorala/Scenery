@@ -14,7 +14,10 @@ from fastapi.encoders import jsonable_encoder
 from starlette.websockets import WebSocketState
 
 from backend.config import ELEVEN_API_KEY, ELEVEN_STT_MODEL_ID, ELEVEN_STT_SAMPLE_RATE
+from backend.config import ELEVEN_TTS_VOICE_ID, ELEVEN_TTS_MODEL_ID, ELEVEN_TTS_STABILITY
+from backend.config import ELEVEN_TTS_SIMILARITY_BOOST, ELEVEN_TTS_OPTIMIZE_LATENCY
 from backend.services.eleven_stt import ElevenLabsSTT, ElevenSTTConfig
+from backend.services.eleven_tts import ElevenLabsTTS, ElevenTTSConfig
 from backend.services.conversation_memory import get_session_context, save_session_turn
 import backend.core.decision as decision_mod  # ✅ dynamic access
 
@@ -150,6 +153,62 @@ async def voice_stream(websocket: WebSocket):
                     "memory_enabled": bool(session_context.get("memory_enabled")),
                 },
             }
+            
+            # Send text response first
+            sent = await _safe_send_json(websocket, payload, label="assistant_response")
+            if sent:
+                await _safe_send_json(
+                    websocket,
+                    {"type": "server_debug", "message": "assistant_response_sent"},
+                    label="debug_assistant_response_sent",
+                )
+                
+                # Now send TTS audio response
+                try:
+                    await _safe_send_json(websocket, {"type": "tts_start"}, label="tts_start")
+                    
+                    tts = ElevenLabsTTS(
+                        ElevenTTSConfig(
+                            api_key=ELEVEN_API_KEY,
+                            voice_id=ELEVEN_TTS_VOICE_ID,
+                            model_id=ELEVEN_TTS_MODEL_ID,
+                            stability=ELEVEN_TTS_STABILITY,
+                            similarity_boost=ELEVEN_TTS_SIMILARITY_BOOST,
+                            optimize_streaming_latency=ELEVEN_TTS_OPTIMIZE_LATENCY,
+                        )
+                    )
+                    
+                    async for event in tts.stream_audio(response_text):
+                        msg_type = event.get("message_type")
+                        
+                        if msg_type == "audio":
+                            audio_data = event.get("audio", "")
+                            await _safe_send_json(
+                                websocket,
+                                {"type": "tts_audio", "audio": audio_data},
+                                label="tts_audio_chunk"
+                            )
+                        elif msg_type == "flush":
+                            await _safe_send_json(websocket, {"type": "tts_end"}, label="tts_end")
+                            break
+                        elif msg_type == "error":
+                            logger.error("tts_error: %s", event.get("error"))
+                            await _safe_send_json(
+                                websocket,
+                                {"type": "tts_error", "error": event.get("error")},
+                                label="tts_error"
+                            )
+                            break
+                            
+                    logger.info("tts_completed")
+                except Exception as tts_exc:
+                    logger.exception("tts_generation_failed")
+                    await _safe_send_json(
+                        websocket,
+                        {"type": "tts_error", "error": str(tts_exc)},
+                        label="tts_exception"
+                    )
+                    
         except Exception as exc:
             elapsed_ms = int((time.perf_counter() - started) * 1000)
             logger.exception("decision_call_failed elapsed_ms=%d", elapsed_ms)
@@ -163,14 +222,14 @@ async def voice_stream(websocket: WebSocket):
                 },
                 "meta": {"decision_ms": elapsed_ms, "status": "error"},
             }
-
-        sent = await _safe_send_json(websocket, payload, label="assistant_response")
-        if sent:
-            await _safe_send_json(
-                websocket,
-                {"type": "server_debug", "message": "assistant_response_sent"},
-                label="debug_assistant_response_sent",
-            )
+            
+            sent = await _safe_send_json(websocket, payload, label="assistant_response")
+            if sent:
+                await _safe_send_json(
+                    websocket,
+                    {"type": "server_debug", "message": "assistant_response_sent"},
+                    label="debug_assistant_response_sent",
+                )
 
     async def audio_chunks() -> AsyncIterator[bytes]:
         while True:
