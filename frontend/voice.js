@@ -3,10 +3,12 @@ const WS_URL = 'ws://localhost:8000/voice/stream';
 const SESSION_STORAGE_KEY = 'scenery_session_id';
 
 let websocket = null;
-let mediaRecorder = null;
+let mediaStream = null;
+let scriptProcessor = null;
 let audioContext = null;
 let isRecording = false;
-let audioChunks = [];
+let reconnectTimer = null;
+let isProcessing = false;
 
 // TTS Audio handling
 let ttsAudioChunks = [];
@@ -53,15 +55,20 @@ function connectWebSocket() {
             console.log('WebSocket closed');
             updateStatus('disconnected', 'Disconnected');
             micButton.disabled = true;
-            micStatus.textContent = 'Disconnected';
+            micStatus.textContent = 'Reconnecting...';
             
-            // Try to reconnect after 3 seconds
-            setTimeout(() => {
-                if (websocket.readyState === WebSocket.CLOSED) {
-                    addTranscript('system', 'Attempting to reconnect...');
-                    connectWebSocket();
-                }
-            }, 3000);
+            // Clear any existing reconnect timer to prevent stacking
+            if (reconnectTimer) {
+                clearTimeout(reconnectTimer);
+                reconnectTimer = null;
+            }
+            
+            // Reconnect faster if we were waiting for a response
+            const delay = isProcessing ? 500 : 3000;
+            reconnectTimer = setTimeout(() => {
+                reconnectTimer = null;
+                connectWebSocket();
+            }, delay);
         };
     } catch (error) {
         console.error('Error connecting to WebSocket:', error);
@@ -102,6 +109,7 @@ function handleWebSocketMessage(data) {
             break;
 
         case 'assistant_response': {
+            isProcessing = false;
             const payload = extractAssistantPayload(data.result || {});
             if (payload.text) {
                 addTranscript('assistant', payload.text);
@@ -146,6 +154,7 @@ function handleWebSocketMessage(data) {
             break;
             
         case 'error':
+            isProcessing = false;
             addTranscript('system', `❌ Error: ${data.message}`);
             break;
             
@@ -187,56 +196,52 @@ micButton.addEventListener('click', async () => {
     }
 });
 
-// Start recording
+// Start recording – capture raw PCM 16-bit 16 kHz audio for ElevenLabs STT
 async function startRecording() {
     try {
-        const stream = await navigator.mediaDevices.getUserMedia({ 
+        mediaStream = await navigator.mediaDevices.getUserMedia({
             audio: {
                 channelCount: 1,
                 sampleRate: 16000,
                 echoCancellation: true,
                 noiseSuppression: true,
-            } 
+            }
         });
-        
+
         audioContext = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 });
-        const source = audioContext.createMediaStreamSource(stream);
-        
-        // Simple recording using MediaRecorder
-        const options = { mimeType: 'audio/webm' };
-        mediaRecorder = new MediaRecorder(stream, options);
-        
-        audioChunks = [];
-        
-        mediaRecorder.ondataavailable = (event) => {
-            if (event.data.size > 0) {
-                audioChunks.push(event.data);
-                
-                // Send audio chunk to WebSocket
-                if (websocket && websocket.readyState === WebSocket.OPEN) {
-                    event.data.arrayBuffer().then(buffer => {
-                        websocket.send(buffer);
-                    });
-                }
+        console.log('AudioContext actual sampleRate:', audioContext.sampleRate);
+
+        const source = audioContext.createMediaStreamSource(mediaStream);
+
+        // ScriptProcessorNode captures raw PCM frames we can send directly
+        scriptProcessor = audioContext.createScriptProcessor(4096, 1, 1);
+        source.connect(scriptProcessor);
+        scriptProcessor.connect(audioContext.destination); // required for processing to run
+
+        scriptProcessor.onaudioprocess = (e) => {
+            if (!isRecording) return;
+            const float32 = e.inputBuffer.getChannelData(0);
+
+            // Convert float32 (-1..1) → signed 16-bit PCM
+            const pcm16 = new Int16Array(float32.length);
+            for (let i = 0; i < float32.length; i++) {
+                const s = Math.max(-1, Math.min(1, float32[i]));
+                pcm16[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
             }
-        };
-        
-        mediaRecorder.onstop = () => {
-            // Send end signal
+
             if (websocket && websocket.readyState === WebSocket.OPEN) {
-                websocket.send(JSON.stringify({ type: 'audio_end' }));
+                websocket.send(pcm16.buffer);
             }
         };
-        
-        mediaRecorder.start(100); // Collect data every 100ms
+
         isRecording = true;
-        
+
         micButton.classList.add('recording');
         micStatus.textContent = '🔴 Recording... Click to stop';
         audioWaves.classList.add('active');
-        
-        console.log('Recording started');
-        
+
+        console.log('Recording started (raw PCM 16 kHz)');
+
     } catch (error) {
         console.error('Error starting recording:', error);
         addTranscript('system', '❌ Microphone access denied. Please allow microphone permissions.');
@@ -246,24 +251,37 @@ async function startRecording() {
 
 // Stop recording
 function stopRecording() {
-    if (mediaRecorder && mediaRecorder.state !== 'inactive') {
-        mediaRecorder.stop();
-        mediaRecorder.stream.getTracks().forEach(track => track.stop());
-    }
-    
-    if (audioContext) {
-        audioContext.close();
-    }
-    
     isRecording = false;
+    isProcessing = true;
+
+    if (scriptProcessor) {
+        scriptProcessor.disconnect();
+        scriptProcessor = null;
+    }
+
+    if (mediaStream) {
+        mediaStream.getTracks().forEach(track => track.stop());
+        mediaStream = null;
+    }
+
+    if (audioContext && audioContext.state !== 'closed') {
+        audioContext.close();
+        audioContext = null;
+    }
+
+    // Tell the backend there is no more audio
+    if (websocket && websocket.readyState === WebSocket.OPEN) {
+        websocket.send(JSON.stringify({ type: 'audio_end' }));
+    }
+
     micButton.classList.remove('recording');
     micStatus.textContent = 'Processing...';
     audioWaves.classList.remove('active');
-    
+
     console.log('Recording stopped');
-    
+
     setTimeout(() => {
-        if (!isRecording) {
+        if (!isRecording && !isSpeaking) {
             micStatus.textContent = 'Click to speak';
         }
     }, 2000);
@@ -422,6 +440,7 @@ async function decodePCMAudio(arrayBuffer, sampleRate) {
 
 function resetSpeakingState() {
     isSpeaking = false;
+    isProcessing = false;
     micButton.classList.remove('speaking');
     audioWaves.classList.remove('active');
     micStatus.textContent = 'Click to speak';
@@ -438,7 +457,13 @@ window.addEventListener('beforeunload', () => {
     if (websocket) {
         websocket.close();
     }
-    if (mediaRecorder && mediaRecorder.state !== 'inactive') {
-        mediaRecorder.stop();
+    if (scriptProcessor) {
+        scriptProcessor.disconnect();
+    }
+    if (mediaStream) {
+        mediaStream.getTracks().forEach(track => track.stop());
+    }
+    if (audioContext && audioContext.state !== 'closed') {
+        audioContext.close();
     }
 });

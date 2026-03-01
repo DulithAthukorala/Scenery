@@ -25,6 +25,10 @@ ELEVEN_TTS_STABILITY = float(os.getenv("ELEVEN_TTS_STABILITY", "0.5"))
 ELEVEN_TTS_SIMILARITY_BOOST = float(os.getenv("ELEVEN_TTS_SIMILARITY_BOOST", "0.75"))
 ELEVEN_TTS_OPTIMIZE_LATENCY = int(os.getenv("ELEVEN_TTS_OPTIMIZE_LATENCY", "4"))
 
+# Groq fallback LLM
+GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
+GROQ_MODEL = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
+
 REDIS_ENABLED = os.getenv("REDIS_ENABLED", "true").strip().lower() in ("1", "true", "yes", "on")
 REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
 REDIS_SESSION_TTL_SECONDS = int(os.getenv("REDIS_SESSION_TTL_SECONDS", "1800"))

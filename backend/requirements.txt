@@ -25,6 +25,7 @@ google-genai
 googleapis-common-protos==1.72.0
 grpcio==1.78.0
 grpcio-status==1.71.2
+groq==1.0.0
 h11==0.16.0
 httpcore==1.0.9
 httplib2==0.31.2

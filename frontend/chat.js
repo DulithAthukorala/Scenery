@@ -27,13 +27,15 @@ function setSuggestion(button) {
 }
 
 // Handle form submission
-document.getElementById('chatForm').addEventListener('submit', async (e) => {
+const chatForm = document.getElementById('chatForm');
+chatForm.addEventListener('submit', async (e) => {
     e.preventDefault();
     
     const input = document.getElementById('chatInput');
+    const sendButton = document.getElementById('sendButton');
     const message = input.value.trim();
     
-    if (!message) return;
+    if (!message || input.disabled) return;
     
     // Hide suggested queries after first message
     const suggestedQueries = document.getElementById('suggestedQueries');
@@ -41,18 +43,11 @@ document.getElementById('chatForm').addEventListener('submit', async (e) => {
         suggestedQueries.style.display = 'none';
     }
     
-    // Add user message
+    // Add user message and clear input
     addMessage('user', message);
-    
-    // Clear input
     input.value = '';
-    
-    // Disable input and button
-    const sendButton = document.getElementById('sendButton');
     input.disabled = true;
     sendButton.disabled = true;
-    
-    // Show typing indicator
     showTypingIndicator();
 
     const sessionId = getOrCreateSessionId();
@@ -60,14 +55,8 @@ document.getElementById('chatForm').addEventListener('submit', async (e) => {
     try {
         const response = await fetch(`${API_BASE_URL}/chat`, {
             method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-                query: message,
-                mode: 'text',
-                session_id: sessionId
-            })
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ query: message, mode: 'text', session_id: sessionId })
         });
         
         if (!response.ok) {
@@ -75,30 +64,22 @@ document.getElementById('chatForm').addEventListener('submit', async (e) => {
         }
         
         const data = await response.json();
-        const totalMs = response.headers.get('X-Total-Ms');
-        const decisionMs = response.headers.get('X-Decision-Ms');
-        const action = response.headers.get('X-Action');
-        const returnedSessionId = response.headers.get('X-Session-Id') || data.session_id || sessionId;
-        if (returnedSessionId) {
-            localStorage.setItem(SESSION_STORAGE_KEY, returnedSessionId);
+
+        // Save session ID from response
+        if (data.session_id) {
+            localStorage.setItem(SESSION_STORAGE_KEY, data.session_id);
         }
-        console.log('chat_timing', { totalMs, decisionMs, action, sessionId: returnedSessionId });
         
-        // Remove typing indicator
         removeTypingIndicator();
         
-        // Add assistant message
-        const content = typeof data.response === 'string' && data.response.trim()
-            ? data.response
-            : 'I could not generate a response right now. Please try again.';
+        const content = (data.response || '').trim() || 'I could not generate a response right now. Please try again.';
         const assistantData = Array.isArray(data.hotels) ? { hotels: data.hotels } : null;
         addMessage('assistant', content, assistantData);
         
     } catch (error) {
         removeTypingIndicator();
-        addMessage('assistant', `❌ Sorry, I encountered an error: ${error.message}. Please make sure the backend is running on port 8000!`, null, true);
+        addMessage('assistant', `Sorry, I encountered an error: ${error.message}. Please make sure the backend is running on port 8000!`, null, true);
     } finally {
-        // Re-enable input and button
         input.disabled = false;
         sendButton.disabled = false;
         input.focus();

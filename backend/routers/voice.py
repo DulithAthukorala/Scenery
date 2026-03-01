@@ -4,7 +4,6 @@ import asyncio
 import json
 import inspect
 import logging
-import time
 from contextlib import suppress
 from typing import AsyncIterator, Optional, Callable, Any
 from uuid import uuid4
@@ -36,7 +35,7 @@ def _get_decision_fn() -> Callable[[str], Any]:
 
 async def _safe_send_json(websocket: WebSocket, payload: dict, *, label: str) -> bool:
     if websocket.application_state != WebSocketState.CONNECTED:
-        logger.warning("skip_send_socket_not_connected label=%s", label)
+        logger.debug("skip_send_socket_not_connected label=%s", label)
         return False
     try:
         await websocket.send_json(payload)
@@ -44,42 +43,32 @@ async def _safe_send_json(websocket: WebSocket, payload: dict, *, label: str) ->
     except WebSocketDisconnect:
         logger.info("send_failed_client_disconnected label=%s", label)
         return False
-    except RuntimeError:
-        logger.exception("send_failed_runtime_error label=%s", label)
+    except RuntimeError as exc:
+        logger.warning("send_failed_runtime label=%s: %s", label, exc)
         return False
+    except Exception as exc:
+        logger.warning("send_failed label=%s: %s: %s", label, type(exc).__name__, exc)
+        return False
+
+
+async def _safe_close(websocket: WebSocket, code: int = 1000) -> None:
+    try:
+        if websocket.application_state == WebSocketState.CONNECTED:
+            await websocket.close(code=code)
     except Exception:
-        logger.exception("send_failed_unexpected label=%s", label)
-        return False
+        pass
 
 
 def _extract_response_text(payload: dict) -> str:
-    data = payload.get("data") if isinstance(payload.get("data"), dict) else {}
-    ranking = data.get("ranking") if isinstance(data.get("ranking"), dict) else {}
-
-    llm_response = ranking.get("llm_response")
-    if isinstance(llm_response, str) and llm_response.strip():
-        return llm_response.strip()
-
-    message = payload.get("message")
-    if isinstance(message, str) and message.strip():
-        return message.strip()
-
-    return "I couldn't generate a response right now. Please try again."
+    data = payload.get("data") or {}
+    ranking = data.get("ranking") or {}
+    return ranking.get("llm_response", "").strip() or payload.get("message", "")
 
 
 def _extract_hotels(payload: dict) -> list:
-    data = payload.get("data") if isinstance(payload.get("data"), dict) else {}
-    ranking = data.get("ranking") if isinstance(data.get("ranking"), dict) else {}
-
-    ranked_hotels = ranking.get("ranked_hotels")
-    if isinstance(ranked_hotels, list):
-        return ranked_hotels
-
-    results = data.get("results")
-    if isinstance(results, list):
-        return results
-
-    return []
+    data = payload.get("data") or {}
+    ranking = data.get("ranking") or {}
+    return ranking.get("ranked_hotels") or data.get("results") or []
 
 
 @router.websocket("/stream")
@@ -91,8 +80,7 @@ async def voice_stream(websocket: WebSocket):
 
     if not ELEVEN_API_KEY:
         await _safe_send_json(websocket, {"type": "error", "message": "ELEVEN_API_KEY missing"}, label="missing_api_key")
-        if websocket.application_state == WebSocketState.CONNECTED:
-            await websocket.close()
+        await _safe_close(websocket)
         return
 
     audio_q: asyncio.Queue[Optional[bytes]] = asyncio.Queue()
@@ -107,12 +95,8 @@ async def voice_stream(websocket: WebSocket):
             return
         decision_called = True
 
-        await _safe_send_json(websocket, {"type": "server_debug", "message": "about_to_call_decision"}, label="debug_about_to_call_decision")
-
-        started = time.perf_counter()
-        payload: dict
         try:
-            logger.info("about_to_call_decision text=%r", final_text)
+            logger.info("calling_decision text=%r", final_text)
             decision_fn = _get_decision_fn()
             result = decision_fn(final_text, mode="voice", context=session_context)
             if inspect.isawaitable(result):
@@ -128,41 +112,21 @@ async def voice_stream(websocket: WebSocket):
                 existing_context=session_context,
             )
 
-            elapsed_ms = int((time.perf_counter() - started) * 1000)
-            logger.info("decision_completed elapsed_ms=%d", elapsed_ms)
+            logger.info("decision_completed")
             payload = {
                 "type": "assistant_response",
-                "result": jsonable_encoder(
-                    {
-                        **result,
-                        "response": response_text,
-                        "hotels": hotels,
-                        "session_id": session_id,
-                        "conversation_id": session_context.get("conversation_id"),
-                        "memory": {
-                            "enabled": bool(session_context.get("memory_enabled")),
-                            "turn_events": len(session_context.get("turns") or []),
-                        },
-                    }
-                ),
-                "meta": {
-                    "decision_ms": elapsed_ms,
-                    "status": "ok",
+                "result": jsonable_encoder({
+                    **result,
+                    "response": response_text,
+                    "hotels": hotels,
                     "session_id": session_id,
                     "conversation_id": session_context.get("conversation_id"),
-                    "memory_enabled": bool(session_context.get("memory_enabled")),
-                },
+                }),
             }
             
             # Send text response first
             sent = await _safe_send_json(websocket, payload, label="assistant_response")
             if sent:
-                await _safe_send_json(
-                    websocket,
-                    {"type": "server_debug", "message": "assistant_response_sent"},
-                    label="debug_assistant_response_sent",
-                )
-                
                 # Now send TTS audio response
                 try:
                     await _safe_send_json(websocket, {"type": "tts_start"}, label="tts_start")
@@ -210,26 +174,15 @@ async def voice_stream(websocket: WebSocket):
                     )
                     
         except Exception as exc:
-            elapsed_ms = int((time.perf_counter() - started) * 1000)
-            logger.exception("decision_call_failed elapsed_ms=%d", elapsed_ms)
+            logger.exception("decision_call_failed")
             payload = {
                 "type": "assistant_response",
                 "result": {
                     "action": "ERROR",
-                    "message": "Decision layer failed while processing transcript.",
-                    "error_type": type(exc).__name__,
-                    "error": str(exc),
+                    "message": f"Decision layer failed: {exc}",
                 },
-                "meta": {"decision_ms": elapsed_ms, "status": "error"},
             }
-            
-            sent = await _safe_send_json(websocket, payload, label="assistant_response")
-            if sent:
-                await _safe_send_json(
-                    websocket,
-                    {"type": "server_debug", "message": "assistant_response_sent"},
-                    label="debug_assistant_response_sent",
-                )
+            await _safe_send_json(websocket, payload, label="assistant_response")
 
     async def audio_chunks() -> AsyncIterator[bytes]:
         while True:
@@ -239,6 +192,7 @@ async def voice_stream(websocket: WebSocket):
             yield chunk
 
     async def receiver_from_client():
+        audio_ended = False
         try:
             while True:
                 message = await websocket.receive()
@@ -250,10 +204,14 @@ async def voice_stream(websocket: WebSocket):
                 if message.get("bytes") is not None:
                     chunk = message.get("bytes") or b""
                     if chunk == b"":
-                        client_audio_done.set()
-                        logger.info("received_end_of_audio_marker")
-                        break
-                    await audio_q.put(chunk)
+                        if not audio_ended:
+                            audio_ended = True
+                            client_audio_done.set()
+                            await audio_q.put(None)
+                            logger.info("received_end_of_audio_marker")
+                        continue  # keep listening for disconnect
+                    if not audio_ended:
+                        await audio_q.put(chunk)
                     continue
 
                 if message.get("text") is not None:
@@ -263,15 +221,19 @@ async def voice_stream(websocket: WebSocket):
                         payload = {}
 
                     if payload.get("type") == "audio_end":
-                        client_audio_done.set()
-                        logger.info("received_audio_end_text_message")
-                        break
+                        if not audio_ended:
+                            audio_ended = True
+                            client_audio_done.set()
+                            await audio_q.put(None)
+                            logger.info("received_audio_end_text_message")
+                        continue  # keep listening for disconnect
 
         except WebSocketDisconnect:
             client_disconnected.set()
             logger.info("client_disconnected_while_receiving")
         finally:
-            await audio_q.put(None)
+            if not audio_ended:
+                await audio_q.put(None)
 
     recv_task = asyncio.create_task(receiver_from_client())
 
@@ -307,8 +269,7 @@ async def voice_stream(websocket: WebSocket):
         final_text = latest_text.strip()
         if not final_text:
             await _safe_send_json(websocket, {"type": "error", "message": "No transcript captured from audio."}, label="no_transcript")
-            if websocket.application_state == WebSocketState.CONNECTED:
-                await websocket.close()
+            await _safe_close(websocket)
             return
 
         await _safe_send_json(websocket, {"type": "final_text", "text": final_text}, label="final_text_post_stream")
@@ -319,29 +280,21 @@ async def voice_stream(websocket: WebSocket):
         # Keep socket open briefly so clients reliably receive the last frame,
         # then close if still connected.
         try:
-            await asyncio.wait_for(client_disconnected.wait(), timeout=1.5)
+            await asyncio.wait_for(client_disconnected.wait(), timeout=3.0)
         except asyncio.TimeoutError:
             pass
 
-        if websocket.application_state == WebSocketState.CONNECTED:
-            await websocket.close(code=1000)
-            logger.info("voice_stream_closed_normally")
+        await _safe_close(websocket, code=1000)
+        logger.info("voice_stream_closed_normally")
 
     except Exception as e:
         logger.exception("voice_ws_error")
-        try:
-            await _safe_send_json(
-                websocket,
-                {"type": "error", "message": f"voice_ws error: {type(e).__name__}: {e}"},
-                label="voice_ws_error",
-            )
-        except Exception:
-            pass
-        try:
-            if websocket.application_state == WebSocketState.CONNECTED:
-                await websocket.close(code=1011)
-        except Exception:
-            pass
+        await _safe_send_json(
+            websocket,
+            {"type": "error", "message": f"voice_ws error: {type(e).__name__}: {e}"},
+            label="voice_ws_error",
+        )
+        await _safe_close(websocket, code=1011)
 
     finally:
         recv_task.cancel()
