@@ -132,7 +132,7 @@ function getCurrentTime() {
 // Set suggestion
 function setSuggestion(button) {
     const input = document.getElementById('chatInput');
-    input.value = button.textContent;
+    input.value = button.textContent.trim();
     input.focus();
 }
 
