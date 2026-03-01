@@ -55,8 +55,6 @@ _CHECKIN_CHECKOUT_RE = re.compile(
 _FAST_BETWEEN_PRICE_RE = re.compile(r"\bbetween\s+([\d.,]+k?)\s+(?:and|to)\s+([\d.,]+k?)\b", re.IGNORECASE)
 _FAST_UNDER_PRICE_RE = re.compile(r"\b(?:under|below|less than|up to)\s+([\d.,]+k?)\b", re.IGNORECASE)
 _FAST_OVER_PRICE_RE = re.compile(r"\b(?:over|above|more than|at least)\s+([\d.,]+k?)\b(?!\s*star)", re.IGNORECASE)
-_STAR_RATING_RE = re.compile(r"\b(?:over|above|at least|minimum|min)?\s*(\d)\s*\+?\s*star(?:s)?\b", re.IGNORECASE)
-_RATING_RE = re.compile(r"rating\s+(\d)(?:\+)?", re.IGNORECASE)
 _ISO_DATE_RE = re.compile(r"\b(20\d{2}-\d{2}-\d{2})\b")
 _ADULTS_RE = re.compile(r"(\d+)\s*(adults|adult|people|persons|guests)", re.IGNORECASE)
 _ROOMS_RE = re.compile(r"(\d+)\s*(rooms|room)", re.IGNORECASE)
@@ -254,12 +252,6 @@ def _apply_context_slots(slots: Slots, context_slots: Dict[str, Any]) -> None:
             except (ValueError, TypeError):
                 pass
 
-    if getattr(slots, "rating", None) is None and context_slots.get("rating") is not None:
-        try:
-            setattr(slots, "rating", int(context_slots["rating"]))
-        except (ValueError, TypeError):
-            pass
-
 
 # ═══════════════════════════════════════════════
 #  Fast regex-based intent + slot extraction
@@ -342,13 +334,6 @@ def _try_fast_intent_and_slots(query: str, fallback_location: Optional[str] = No
         price_min=price_min, price_max=price_max,
     )
 
-    # ── Extract star/rating ──
-    rating_m = _RATING_RE.search(text) or _STAR_RATING_RE.search(text)
-    if rating_m:
-        setattr(slots, "rating", int(rating_m.group(1)))
-    else:
-        setattr(slots, "rating", None)
-
     # ── Decide intent ──
     if check_in and check_out:
         return LIVE_PRICES, 0.99, slots
@@ -385,8 +370,19 @@ Hotels available (JSON):
 {json.dumps(hotels_subset, indent=2)}
 
 Task:
-1. Rank the top {limit} hotels that best match the user's query
-2. Return a JSON object with:
+1. Carefully analyze the user's query for contextual clues:
+   - Travel companions (friends, family, solo, couples, business colleagues)
+   - Trip purpose (leisure, honeymoon, business, adventure, relaxation)
+   - Preferences (luxury, budget, quiet, party atmosphere, romantic, family-friendly)
+   - Desired amenities (pool, beach, restaurants, nightlife, activities)
+   - Any special requirements or mentioned keywords
+
+2. Rank the top {limit} hotels that best match the user's query and context
+   - Prioritize hotels that align with the travel style and purpose
+   - Consider price range if mentioned
+   - Match amenities to the implied needs (e.g., "friends" = social spaces, "family" = kid-friendly)
+
+3. Return a JSON object with:
    - "ranked_ids": list of hotel IDs in ranked order (top {limit})
    - "response": a natural language response explaining your recommendation
 
@@ -476,12 +472,90 @@ def _ask_dates(intent: str, confidence: float, slots, needs_location_too: bool) 
 async def handle_query(
     user_query: str,
     mode: str = "text",
+    force_mode: Optional[str] = None,
+    preset_location: Optional[str] = None,
+    preset_dates: Optional[dict] = None,
+    rerank_hotels: Optional[list] = None,
     context: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     """
     Single entry point for all chat / voice queries.
     Routes to: OFF_TOPIC → EXPLORE_LOCAL → NEEDS_DATES → LIVE_PRICES
+    
+    If rerank_hotels is provided, skips RapidAPI call and just re-ranks those hotels.
     """
+    # Re-ranking mode: Just re-rank existing hotels without calling RapidAPI
+    if rerank_hotels and isinstance(rerank_hotels, list) and len(rerank_hotels) > 0:
+        ranking = await asyncio.to_thread(_rank_and_respond, rerank_hotels, user_query, mode)
+        return {
+            "intent": "LIVE_PRICES", "confidence": 1.0, "action": "RERANK",
+            "slots": {"location": preset_location or ""} if preset_location else {},
+            "data": {"ranking": ranking},
+        }
+    
+    # Live mode with presets from date picker form
+    if force_mode == "live_prices" and preset_dates:
+        check_in = preset_dates.get("check_in")
+        check_out = preset_dates.get("check_out")
+        location = preset_location or ""
+        
+        if not (check_in and check_out and location):
+            return {
+                "intent": "LIVE_PRICES", "confidence": 1.0, "action": "FALLBACK",
+                "message": "Please select a city and dates in the Live Prices form.",
+                "slots": {}
+            }
+        
+        # Extract preferences from query
+        extracted = extract_slots(user_query)
+        slots = Slots(
+            location=location,
+            check_in=check_in,
+            check_out=check_out,
+            price_min=getattr(extracted, "price_min", None),
+            price_max=getattr(extracted, "price_max", None),
+            adults=getattr(extracted, "adults", None) or 2,
+            rooms=getattr(extracted, "rooms", None) or 1,
+        )
+        
+        geo = convert_geo_id(location)
+        if not geo.geo_id:
+            return {
+                "intent": "LIVE_PRICES", "confidence": 1.0, "action": "FALLBACK",
+                "message": f"Sorry, I couldn't map '{location}' to a supported city.",
+                "slots": asdict(slots)
+            }
+        
+        try:
+            data = await get_hotel_insights(
+                geoId=str(geo.geo_id),
+                checkIn=check_in,
+                checkOut=check_out,
+                adults=slots.adults,
+                rooms=slots.rooms,
+                priceMin=slots.price_min,
+                priceMax=slots.price_max,
+                rating=None,
+                user_request=user_query,
+            )
+            hotels_list = data.get("results", [])
+            ranking = await asyncio.to_thread(_rank_and_respond, hotels_list, user_query, mode)
+            data["ranking"] = ranking
+            
+            return {
+                "intent": "LIVE_PRICES", "confidence": 1.0, "action": "RAPIDAPI",
+                "slots": asdict(slots),
+                "geo": {"geoId": geo.geo_id, "city": geo.matched_city},
+                "data": data,
+            }
+        except Exception as e:
+            logger.warning("RapidAPI error: %s", e)
+            return {
+                "intent": "LIVE_PRICES", "confidence": 1.0, "action": "RAPIDAPI_ERROR",
+                "message": f"Sorry, I couldn't fetch live prices right now. Error: {e}",
+                "slots": asdict(slots),
+            }
+    
     context_slots = context.get("slots") if isinstance(context, dict) else None
     context_location = None
     if isinstance(context_slots, dict) and context_slots.get("location"):
@@ -502,6 +576,10 @@ async def handle_query(
     if isinstance(context_slots, dict):
         _apply_context_slots(slots, context_slots)
         intent = _apply_overrides(intent, user_query, slots)
+
+    # Mode override: Standard mode never uses RapidAPI
+    if force_mode == "standard" and intent == LIVE_PRICES:
+        intent = EXPLORE_LOCAL
 
     # ── Step 3: Route by intent ──
 
@@ -530,16 +608,15 @@ async def handle_query(
         data = get_hotel_insights_localdb(
             location=slots.location,
             user_request=user_query,
-            rating=getattr(slots, "rating", None),
+            rating=None,
             priceMin=getattr(slots, "price_min", None),
             priceMax=getattr(slots, "price_max", None),
         )
         results = data.get("results", [])
 
-        llm_response = await asyncio.to_thread(
-            _generate_local_llm_response, results, str(slots.location), user_query, mode
-        )
-        data["ranking"] = {"ranked_hotels": results[:5], "llm_response": llm_response, "mode": mode}
+        # Use LLM to rank hotels by user preferences (same as LIVE_PRICES mode)
+        ranking = await asyncio.to_thread(_rank_and_respond, results, user_query, mode)
+        data["ranking"] = ranking
 
         return {"intent": intent, "confidence": confidence, "action": "LOCAL_DB", "slots": asdict(slots), "data": data}
 
@@ -568,7 +645,7 @@ async def handle_query(
                 rooms=getattr(slots, "rooms", None) or 1,
                 priceMin=getattr(slots, "price_min", None),
                 priceMax=getattr(slots, "price_max", None),
-                rating=getattr(slots, "rating", None),
+                rating=None,
                 user_request=user_query,
             )
             hotels_list = data.get("results", [])

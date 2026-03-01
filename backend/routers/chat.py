@@ -18,6 +18,10 @@ class ChatRequest(BaseModel):
     query: str = Field(..., min_length=1)
     mode: Optional[str] = None
     session_id: Optional[str] = None
+    force_mode: Optional[str] = None
+    preset_location: Optional[str] = None
+    preset_dates: Optional[dict] = None
+    rerank_hotels: Optional[list] = None  # For re-ranking existing hotels without calling RapidAPI
 
 
 @router.post("/chat")
@@ -35,7 +39,15 @@ async def chat_query(payload: ChatRequest, request: Request, response: Response)
 
     # 1. Load conversation context & run the decision engine
     session_context = await get_session_context(session_id)
-    decision_result = await handle_query(user_query, mode=mode, context=session_context)
+    decision_result = await handle_query(
+        user_query, 
+        mode=mode, 
+        force_mode=payload.force_mode,
+        preset_location=payload.preset_location,
+        preset_dates=payload.preset_dates,
+        rerank_hotels=payload.rerank_hotels,
+        context=session_context
+    )
 
     # 2. Pull the LLM response text and hotel list from the result
     data = decision_result.get("data") or {}
