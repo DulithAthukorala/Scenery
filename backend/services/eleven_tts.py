@@ -87,6 +87,9 @@ class ElevenLabsTTS:
                     "stability": self.cfg.stability,
                     "similarity_boost": self.cfg.similarity_boost,
                 },
+                "generation_config": {
+                    "chunk_length_schedule": [120, 160, 250, 290],
+                },
                 "xi_api_key": self.cfg.api_key,
                 "enable_ssml_parsing": enable_ssml_parsing,
             }

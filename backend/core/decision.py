@@ -349,10 +349,44 @@ def _try_fast_intent_and_slots(query: str, fallback_location: Optional[str] = No
 #  Prompt builders for LLM
 # ═══════════════════════════════════════════════
 
+def _generate_tts_summary(ranked_hotels: List[Dict[str, Any]], user_query: str) -> str:
+    """Generate a short, voice-optimised TTS narration (separate from the display response)."""
+    if not ranked_hotels:
+        return "I couldn't find any hotels matching what you're looking for. Try a different location or adjust your preferences."
+
+    compact = [
+        {"name": h.get("name", "Unnamed"), "rating": h.get("rating"), "price": h.get("price"), "location": h.get("location")}
+        for h in ranked_hotels[:3]
+    ]
+    prompt = f"""You are a friendly voice assistant for a Sri Lanka hotel search app called Scenery.
+The user asked: "{user_query}"
+
+Here are the top picks (JSON): {json.dumps(compact, ensure_ascii=False)}
+
+Write a SHORT spoken summary (2-3 sentences max). Highlight the number-one pick by name and its best selling point.
+Mention the other picks only briefly. Use a warm, conversational tone suitable for text-to-speech.
+Do NOT use markdown, bullet points, or emojis. Output only the final spoken text."""
+
+    try:
+        return (generate_text(prompt, max_output_tokens=120, temperature=0.6) or "").strip()
+    except Exception as e:
+        logger.warning("TTS summary generation failed: %s", e)
+        top = ranked_hotels[0]
+        return f"I found {len(ranked_hotels)} great options. My top pick is {top.get('name', 'a lovely hotel')}."
+
+
 def _rank_and_respond(hotels: List[Dict[str, Any]], user_query: str, mode: str = "text", limit: int = 5) -> Dict[str, Any]:
     """Use LLM to rank hotels and write a natural response."""
+    # Voice mode: limit to 3 hotels for concise output
+    if mode == "voice" and limit == 5:
+        limit = 3
+
     if not hotels:
-        return {"ranked_hotels": [], "llm_response": "No hotels found matching your criteria.", "mode": mode}
+        no_result = "No hotels found matching your criteria."
+        out: Dict[str, Any] = {"ranked_hotels": [], "llm_response": no_result, "mode": mode}
+        if mode == "voice":
+            out["tts_response"] = "I couldn't find any hotels matching what you're looking for. Try a different location or adjust your preferences."
+        return out
 
     hotels_subset = hotels[:15]
 
@@ -414,11 +448,22 @@ Output only valid JSON, no extra text."""
             if len(ranked_hotels) >= limit:
                 break
 
-        return {"ranked_hotels": ranked_hotels[:limit], "llm_response": llm_response, "mode": mode}
+        ranked_hotels = ranked_hotels[:limit]
+        out = {"ranked_hotels": ranked_hotels, "llm_response": llm_response, "mode": mode}
+
+        # Generate a separate voice-optimised TTS summary
+        if mode == "voice":
+            out["tts_response"] = _generate_tts_summary(ranked_hotels, user_query)
+
+        return out
 
     except Exception as e:
         logger.warning("LLM ranking failed: %s", e)
-        return {"ranked_hotels": hotels[:limit], "llm_response": f"Here are {len(hotels)} hotels matching your search.", "mode": mode}
+        fallback_hotels = hotels[:limit]
+        out = {"ranked_hotels": fallback_hotels, "llm_response": f"Here are {len(hotels)} hotels matching your search.", "mode": mode}
+        if mode == "voice":
+            out["tts_response"] = _generate_tts_summary(fallback_hotels, user_query)
+        return out
 
 
 def _generate_local_llm_response(hotels: List[Dict[str, Any]], location: str, user_query: str, mode: str) -> str:

@@ -11,6 +11,10 @@ GEMINI_MODEL = os.getenv("GEMINI_MODEL", "models/gemini-2.5-flash")
 ENV = os.getenv("ENV", "development") # what environment we're running in (development, production, etc.)
 LOG_LEVEL = os.getenv("LOG_LEVEL", "info") # how noisy the logs should be (debug, info, warning, error, critical)
 
+# Groq fallback LLM
+GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
+GROQ_MODEL = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
+
 RAPIDAPI_KEY = os.getenv("RAPIDAPI_KEY")
 RAPIDAPI_HOST = os.getenv("RAPIDAPI_HOST")
 
@@ -25,17 +29,12 @@ ELEVEN_TTS_STABILITY = float(os.getenv("ELEVEN_TTS_STABILITY", "0.5"))
 ELEVEN_TTS_SIMILARITY_BOOST = float(os.getenv("ELEVEN_TTS_SIMILARITY_BOOST", "0.75"))
 ELEVEN_TTS_OPTIMIZE_LATENCY = int(os.getenv("ELEVEN_TTS_OPTIMIZE_LATENCY", "4"))
 
-# Groq fallback LLM
-GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
-GROQ_MODEL = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
 
 REDIS_ENABLED = os.getenv("REDIS_ENABLED", "true").strip().lower() in ("1", "true", "yes", "on")
 REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
 REDIS_SESSION_TTL_SECONDS = int(os.getenv("REDIS_SESSION_TTL_SECONDS", "1800"))
 REDIS_MAX_TURNS = int(os.getenv("REDIS_MAX_TURNS", "8"))
 
-if not GEMINI_API_KEY:
-    raise RuntimeError(f"GEMINI_API_KEY is not set (loaded from: {ENV_PATH})")
 
 if not RAPIDAPI_KEY or not RAPIDAPI_HOST:
     raise RuntimeError(f"RapidAPI creds missing. Loaded from: {ENV_PATH}")
