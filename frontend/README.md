@@ -1,167 +1,146 @@
-# 🚀 Scenery Frontend - Plain HTML/CSS/JS
+# Scenery Frontend
 
-**No Node.js, No npm, No build tools required!**
+Plain HTML / CSS / JS — no Node.js, no npm, no build tools.
 
-Just open the HTML files in your browser and start using the app.
+## Pages
 
-## 📁 What's Inside
-
-```
-frontend/
-├── index.html       # Home page (landing)
-├── chat.html        # AI Chat interface
-├── search.html      # Hotel search
-├── styles.css       # All the beautiful styles
-├── chat.js          # Chat functionality
-└── search.js        # Search functionality
-```
-
-## 🏃 How to Run
-
-### Step 1: Start the Backend
-
-The frontend needs your FastAPI backend running. Open Terminal and run:
-
-```bash
-cd /Users/dulith/Scenery
-python -m uvicorn backend.main:app --reload --port 8000
-```
-
-Keep this terminal window open! You should see:
-```
-INFO:     Uvicorn running on http://0.0.0.0:8000
-```
-
-### Step 2: Open the Frontend
-
-**Option A: Double-click the files**
-- Navigate to `/Users/dulith/Scenery/frontend/`
-- Double-click `index.html` to open in your browser
-
-**Option B: Use the command line**
-```bash
-open /Users/dulith/Scenery/frontend/index.html
-```
-
-**Option C: Start a simple Python server (recommended for avoiding CORS issues)**
-```bash
-cd /Users/dulith/Scenery/frontend
-python3 -m http.server 3000
-```
-Then open: http://localhost:3000
-
-### Step 3: Explore!
-
-- **Home Page** (`index.html`) - Beautiful landing page
-- **Chat** (`chat.html`) - Talk to the AI assistant
-- **Search** (`search.html`) - Advanced hotel search with filters
-
-## 🎨 Features
-
-- ✨ **Same Beautiful Design** - Dark theme with gradients
-- 💬 **AI Chat** - Real-time conversations with hotel recommendations
-- 🔍 **Hotel Search** - Filter by location, price, rating
-- 📱 **Fully Responsive** - Works on desktop, tablet, mobile
-- ⚡ **No Dependencies** - Pure vanilla JavaScript
-
-## 🔧 How It Works
-
-### Architecture
-
-```
-Browser (Frontend) ←→ FastAPI (Backend)
-   Port 3000              Port 8000
-```
-
-The JavaScript files (`chat.js` and `search.js`) make HTTP requests to your backend API:
-- Chat: `POST http://localhost:8000/chat`
-- Search: `GET http://localhost:8000/localdb/hotels/insights`
-
-### Configuration
-
-Both JS files have this at the top:
-```javascript
-const API_BASE_URL = 'http://localhost:8000';
-```
-
-If your backend is on a different port, change this URL in:
-- `chat.js`
-- `search.js`
-
-## 🐛 Troubleshooting
-
-### "Failed to fetch" or "CORS error"
-
-**Solution 1**: Use Python's HTTP server (recommended)
-```bash
-cd /Users/dulith/Scenery/frontend
-python3 -m http.server 3000
-```
-Then open http://localhost:3000
-
-**Solution 2**: Enable CORS in your backend
-Add to `backend/main.py`:
-```python
-from fastapi.middleware.cors import CORSMiddleware
-
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-```
-
-### Backend not responding
-
-Make sure it's running on port 8000:
-```bash
-curl http://localhost:8000/health
-```
-Should return: `{"status":"ok"}`
-
-### Chat/Search not working
-
-1. Open browser DevTools (Right-click → Inspect → Console)
-2. Look for error messages
-3. Check that backend is running
-4. Verify the API_BASE_URL in the JS files
-
-## 📝 Making Changes
-
-### Change Colors
-Edit `styles.css` and modify the CSS variables at the top:
-```css
-:root {
-  --primary-gradient: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  /* etc */
-}
-```
-
-### Add New Features
-- HTML structure goes in `.html` files
-- Styles go in `styles.css`
-- JavaScript logic goes in `.js` files
-
-### Hot Reload
-Just refresh your browser (Cmd+R) after making changes!
-
-## 🌟 What Makes This Special
-
-- **Zero Dependencies**: No package.json, no node_modules
-- **Simple Deployment**: Just upload HTML/CSS/JS files to any web server
-- **Easy to Understand**: Plain vanilla JavaScript, no frameworks
-- **Production Ready**: Minify the files and deploy anywhere
-- **Beautiful UI**: Same aesthetic as the React version
-
-## 🚀 Next Steps
-
-1. Customize colors in `styles.css`
-2. Add your own branding
-3. Deploy to GitHub Pages, Netlify, or any static host
-4. Add more features (save favorites, booking, etc.)
+| File | Purpose |
+|------|---------|
+| `index.html` | Landing page |
+| `chat.html` + `chat.js` | Text chat interface (POST /chat) |
+| `voice.html` + `voice.js` | Voice interface — Pipecat + Daily WebRTC pipeline |
+| `search.html` + `search.js` | Advanced hotel search with filters |
+| `styles.css` | Shared glassmorphism design system |
 
 ---
 
-**Enjoy your Node.js-free, React-free, beautiful frontend!** 🎉
+## How to Run
+
+### Prerequisites — add these to `backend/.env`
+
+```
+GEMINI_API_KEY=...
+GROQ_API_KEY=...
+RAPIDAPI_KEY=...
+RAPIDAPI_HOST=...
+ELEVEN_API_KEY=...
+DAILY_API_KEY=...          # get a free key at dashboard.daily.co
+DAILY_BOT_URL=http://localhost:8100
+```
+
+### Terminal 1 — Pipecat bot (Docker, Linux)
+
+The Pipecat voice pipeline runs in a Linux Docker container because the
+`daily-python` WebRTC library has no Windows wheels.
+
+```bash
+# From the project root
+docker compose up --build bot
+```
+
+Bot runner is now listening on port 8100.
+
+### Terminal 2 — FastAPI backend (Windows)
+
+```bash
+cd path/to/Scenery
+python -m uvicorn backend.main:app --reload --port 8000
+```
+
+### Terminal 3 — Serve the frontend
+
+```bash
+cd frontend
+python -m http.server 3000
+```
+
+Open http://localhost:3000
+
+---
+
+## Architecture
+
+```
+Browser
+ ├─ chat.html   → POST /chat                  (text, HTTP)
+ ├─ search.html → GET  /localdb/hotels/...    (HTTP)
+ └─ voice.html  → POST /voice/room            (get Daily room URL)
+                → Daily JS SDK (WebRTC audio) ↔ Daily.co cloud
+                                              ↔ Pipecat bot (port 8100)
+                                                 ElevenLabs STT
+                                                 → decision engine (decision.py)
+                                                 → Gemini LLM
+                                                 ElevenLabs TTS
+                                              ← hotel cards via Daily app-message
+```
+
+### Voice flow (step by step)
+
+1. `voice.html` loads → calls `POST /voice/room` on FastAPI
+2. FastAPI creates a Daily.co room (1-hour TTL), generates tokens, tells the bot container to start
+3. Pipecat bot joins the room via WebRTC
+4. Browser joins via `@daily-co/daily-js` SDK — no iframe, headless call object
+5. User clicks mic → `call.setLocalAudio(true)` → audio streams to bot over WebRTC
+6. Bot's Silero VAD detects end of speech → ElevenLabs STT transcribes it
+7. `HotelQueryProcessor` calls `handle_query()` → hotel data + Gemini response
+8. Bot sends hotel cards to browser via Daily **app message** (no extra socket needed)
+9. ElevenLabs TTS generates speech → bot outputs audio back through WebRTC
+10. Browser plays bot audio automatically (Daily SDK handles it)
+11. `active-speaker-change` event updates the mic button UI
+
+---
+
+## API Endpoints
+
+| Method | Path | Used by |
+|--------|------|---------|
+| `GET` | `/health` | — |
+| `POST` | `/chat` | chat.js, voice.js (live prices form) |
+| `POST` | `/voice/room` | voice.js on page load |
+| `WS` | `/voice/stream` | legacy fallback (not used by voice.html) |
+| `GET` | `/localdb/hotels/insights` | search.js |
+| `GET` | `/rapidapi/hotels/insights` | search.js |
+
+---
+
+## Troubleshooting
+
+### "Room creation failed" on voice page
+- Check `DAILY_API_KEY` is set in `backend/.env`
+- Check the bot container is running: `docker ps` → should show `scenery-bot`
+- Check bot logs: `docker compose logs bot`
+
+### "DAILY_BOT_URL not configured"
+- Ensure `DAILY_BOT_URL=http://localhost:8100` is in `backend/.env`
+
+### Bot container exits immediately
+- Usually a missing env var. Run:
+  ```bash
+  docker compose logs bot
+  ```
+  Common culprits: `RAPIDAPI_KEY`, `GEMINI_API_KEY`, `ELEVEN_API_KEY`
+
+### Chat or search not working
+- Verify backend is running: `curl http://localhost:8000/health`
+- Open browser DevTools → Console for error messages
+
+### CORS errors
+Already configured in `backend/main.py`. If you still see CORS errors, make
+sure you're accessing the frontend via `http://localhost:3000` (not `file://`).
+
+---
+
+## Making Changes
+
+| What | Where |
+|------|-------|
+| Colors / design | `styles.css` — edit the CSS variables at the top |
+| Chat logic | `chat.js` |
+| Voice UI | `voice.js` — UI functions are at the bottom; transport layer is at the top |
+| Hotel pipeline | `backend/bot/hotel_processor.py` |
+| Pipecat pipeline config | `backend/bot/pipecat_bot.py` |
+| Intent / routing logic | `backend/core/decision.py` |
+
+After any Python change, FastAPI reloads automatically (`--reload`).
+After any bot change, rebuild: `docker compose up --build bot`.
+After any frontend change, just refresh the browser.

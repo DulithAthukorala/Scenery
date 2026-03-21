@@ -1,0 +1,22 @@
+FROM python:3.11-slim
+
+WORKDIR /app
+
+# Build deps needed by some pipecat audio libs
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends gcc g++ libffi-dev && \
+    rm -rf /var/lib/apt/lists/*
+
+# Install Python deps first (layer-cached unless requirements change)
+COPY backend/requirements.bot.txt ./requirements.bot.txt
+RUN pip install --no-cache-dir -r requirements.bot.txt
+
+# Download spaCy English model used by keyword_extractor / decision engine
+RUN python -m spacy download en_core_web_sm
+
+# The rest of the project is mounted at runtime via docker volume (-v .:/app)
+# so we don't COPY source code here — changes are picked up without rebuilds.
+
+ENV PYTHONUNBUFFERED=1
+
+CMD ["python", "-m", "backend.bot.pipecat_bot"]

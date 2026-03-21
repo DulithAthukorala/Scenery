@@ -3,14 +3,229 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Voice Chat - Scenery AI</title>
+    <title>Voice - Scenery AI</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="styles.css">
+    <script crossorigin src="https://unpkg.com/@daily-co/daily-js"></script>
+    <style>
+        .voice-orb-page {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            min-height: calc(100vh - 70px);
+            padding: 3rem 1rem 2rem;
+        }
+        .voice-orb-container {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 2rem;
+            width: 100%;
+            max-width: 640px;
+        }
+
+        /* ── Status bar ── */
+        .v-status {
+            display: flex;
+            align-items: center;
+            gap: 7px;
+            font-size: 0.8rem;
+            color: var(--text-tertiary);
+        }
+
+        /* ── Orb ── */
+        .orb-scene {
+            position: relative;
+            width: 200px;
+            height: 200px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .orb-ring {
+            position: absolute;
+            border-radius: 50%;
+            border: 1.5px solid transparent;
+            pointer-events: none;
+        }
+        .orb-ring-1 { width: 172px; height: 172px; }
+        .orb-ring-2 { width: 196px; height: 196px; }
+
+        /* active ring animations injected by JS via .orb-scene data attr */
+        .orb-scene[data-state="listening"] .orb-ring-1 {
+            border-color: rgba(34,197,94,0.35);
+            animation: orb-pulse 1.4s ease-out infinite;
+        }
+        .orb-scene[data-state="listening"] .orb-ring-2 {
+            border-color: rgba(34,197,94,0.18);
+            animation: orb-pulse 1.4s ease-out infinite 0.45s;
+        }
+        .orb-scene[data-state="speaking"] .orb-ring-1 {
+            border-color: rgba(139,92,246,0.35);
+            animation: orb-pulse 1.8s ease-out infinite;
+        }
+        .orb-scene[data-state="speaking"] .orb-ring-2 {
+            border-color: rgba(139,92,246,0.18);
+            animation: orb-pulse 1.8s ease-out infinite 0.6s;
+        }
+        @keyframes orb-pulse {
+            0%   { transform: scale(1);    opacity: 1; }
+            100% { transform: scale(1.35); opacity: 0; }
+        }
+
+        .orb-btn {
+            width: 150px;
+            height: 150px;
+            border-radius: 50%;
+            border: 1.5px solid var(--glass-border);
+            background: var(--glass-bg);
+            backdrop-filter: blur(24px);
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: var(--text-secondary);
+            transition: transform 0.18s ease, box-shadow 0.25s ease,
+                        background 0.25s ease, border-color 0.25s ease, color 0.25s ease;
+            position: relative;
+            z-index: 1;
+        }
+        .orb-btn:hover:not(:disabled) { transform: scale(1.05); }
+        .orb-btn:disabled { opacity: 0.45; cursor: not-allowed; }
+
+        .orb-btn[data-state="listening"] {
+            background: rgba(34,197,94,0.12);
+            border-color: rgba(34,197,94,0.45);
+            color: #22c55e;
+            box-shadow: 0 0 48px rgba(34,197,94,0.18);
+        }
+        .orb-btn[data-state="processing"] {
+            background: rgba(249,115,22,0.12);
+            border-color: rgba(249,115,22,0.45);
+            color: #f97316;
+            box-shadow: 0 0 48px rgba(249,115,22,0.18);
+        }
+        .orb-btn[data-state="speaking"] {
+            background: rgba(139,92,246,0.12);
+            border-color: rgba(139,92,246,0.45);
+            color: #8b5cf6;
+            box-shadow: 0 0 48px rgba(139,92,246,0.18);
+        }
+        .orb-btn[data-state="processing"] .orb-icon { animation: spin 1.4s linear infinite; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        .orb-label {
+            font-size: 0.88rem;
+            color: var(--text-tertiary);
+            min-height: 1.3em;
+            text-align: center;
+            transition: color 0.25s;
+        }
+        .orb-label[data-state="listening"]  { color: #22c55e; }
+        .orb-label[data-state="processing"] { color: #f97316; }
+        .orb-label[data-state="speaking"]   { color: #8b5cf6; }
+
+        .end-btn {
+            font-size: 0.8rem;
+            color: var(--text-tertiary);
+            background: none;
+            border: 1px solid var(--glass-border);
+            border-radius: 999px;
+            padding: 0.38rem 1.2rem;
+            cursor: pointer;
+            transition: all 0.18s;
+            display: none;
+        }
+        .end-btn:hover { color: #f87171; border-color: rgba(248,113,113,0.45); }
+
+        /* ── Transcript ── */
+        .v-transcript {
+            width: 100%;
+            background: var(--glass-bg);
+            backdrop-filter: blur(20px);
+            border: 1px solid var(--glass-border);
+            border-radius: 20px;
+            overflow: hidden;
+        }
+        .v-transcript-head {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 0.85rem 1.2rem;
+            border-bottom: 1px solid var(--glass-border);
+        }
+        .v-transcript-head h3 {
+            font-size: 0.75rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.06em;
+            color: var(--text-tertiary);
+            margin: 0;
+        }
+        .v-clear-btn {
+            background: none;
+            border: none;
+            color: var(--text-tertiary);
+            font-size: 0.78rem;
+            cursor: pointer;
+            padding: 2px 6px;
+            border-radius: 4px;
+        }
+        .v-clear-btn:hover { color: var(--text-primary); }
+        .v-transcript-body {
+            max-height: 360px;
+            overflow-y: auto;
+            padding: 1rem 1.2rem;
+            display: flex;
+            flex-direction: column;
+            gap: 1rem;
+        }
+
+        /* messages */
+        .vmsg {
+            display: flex;
+            gap: 0.65rem;
+            align-items: flex-start;
+        }
+        .vmsg-avatar {
+            width: 26px; height: 26px;
+            border-radius: 50%;
+            display: flex; align-items: center; justify-content: center;
+            flex-shrink: 0;
+            font-size: 0.68rem; font-weight: 700;
+        }
+        .vmsg-user     .vmsg-avatar { background: rgba(139,92,246,0.18); color: #a78bfa; }
+        .vmsg-assistant .vmsg-avatar { background: rgba(34,197,94,0.18);  color: #4ade80; }
+        .vmsg-system   .vmsg-avatar { background: rgba(249,115,22,0.15);  color: #fb923c; }
+        .vmsg-body { flex: 1; }
+        .vmsg-role {
+            font-size: 0.68rem; font-weight: 600;
+            text-transform: uppercase; letter-spacing: 0.05em;
+            color: var(--text-tertiary); margin-bottom: 3px;
+        }
+        .vmsg-text { font-size: 0.88rem; color: var(--text-primary); line-height: 1.55; }
+        .vmsg-partial .vmsg-text { color: var(--text-tertiary); font-style: italic; }
+
+        /* hotel cards */
+        .v-hotels { display: flex; flex-direction: column; gap: 0.45rem; margin-top: 0.6rem; }
+        .v-hotel-card {
+            background: rgba(255,255,255,0.03);
+            border: 1px solid var(--glass-border);
+            border-radius: 12px;
+            padding: 0.7rem 1rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 0.5rem;
+        }
+        .v-hotel-name { font-weight: 600; font-size: 0.84rem; color: var(--text-primary); }
+        .v-hotel-meta { font-size: 0.73rem; color: var(--text-tertiary); margin-top: 1px; }
+        .v-hotel-price { font-size: 0.8rem; color: #4ade80; font-weight: 600; white-space: nowrap; }
+    </style>
 </head>
 <body>
-    <!-- Navigation -->
     <nav class="navbar glass-morphism">
         <div class="nav-content">
             <a href="index.html" class="nav-brand">
@@ -48,195 +263,51 @@
         </div>
     </nav>
 
-    <!-- Main Content -->
     <main class="main-content">
-        <div class="voice-page fade-in">
-            <div class="voice-container">
-                <!-- Voice Header -->
-                <div class="voice-header glass-morphism">
-                    <div class="voice-header-content">
-                        <div class="voice-icon">
-                            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
-                                <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
-                                <line x1="12" y1="19" x2="12" y2="23"/>
-                                <line x1="8" y1="23" x2="16" y2="23"/>
-                            </svg>
-                        </div>
-                        <div>
-                            <h1 class="voice-title">Voice Assistant</h1>
-                            <p class="voice-subtitle">Speak naturally to find hotels</p>
-                        </div>
-                    </div>
-                    <div class="status-indicator">
-                        <div class="status-dot" id="statusDot"></div>
-                        <span id="statusText">Disconnected</span>
-                    </div>
+        <div class="voice-orb-page fade-in">
+            <div class="voice-orb-container">
+
+                <!-- status -->
+                <div class="v-status">
+                    <div class="status-dot" id="statusDot"></div>
+                    <span id="statusText">Connecting…</span>
                 </div>
 
-                <!-- Mode Selector -->
-                <div class="mode-selector-wrapper">
-                    <div class="mode-selector">
-                        <button type="button" class="mode-btn active" data-mode="standard">
-                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/>
-                                <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/>
-                            </svg>
-                            Standard
-                        </button>
-                        <button type="button" class="mode-btn" data-mode="live_prices">
-                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                <circle cx="12" cy="12" r="10"/>
-                                <polyline points="12 6 12 12 16 14"/>
-                            </svg>
-                            Live Prices
-                        </button>
-                    </div>
-                </div>
-
-                <!-- Live Prices Form (hidden by default) -->
-                <div class="live-prices-form glass-morphism" id="livePricesForm" style="display: none;">
-                    <div class="form-header">
-                        <div class="form-icon">
-                            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                <circle cx="12" cy="12" r="10"/>
-                                <path d="M12 6v6l4 2"/>
-                            </svg>
-                        </div>
-                        <div>
-                            <h3>Live Prices Search</h3>
-                            <p>Get real-time hotel pricing and availability</p>
-                        </div>
-                    </div>
-                    <div class="form-grid">
-                        <div class="form-group">
-                            <label for="voiceCitySelect">
-                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                    <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/>
-                                    <circle cx="12" cy="10" r="3"/>
-                                </svg>
-                                City
-                            </label>
-                            <select id="voiceCitySelect" class="form-input">
-                                <option value="">Select a destination</option>
-                                <option value="Colombo">Colombo</option>
-                                <option value="Kandy">Kandy</option>
-                                <option value="Galle">Galle</option>
-                                <option value="Ella">Ella</option>
-                                <option value="Nuwara Eliya">Nuwara Eliya</option>
-                                <option value="Sigiriya">Sigiriya</option>
-                                <option value="Mirissa">Mirissa</option>
-                                <option value="Negombo">Negombo</option>
-                                <option value="Trincomalee">Trincomalee</option>
-                                <option value="Arugam Bay">Arugam Bay</option>
-                                <option value="Jaffna">Jaffna</option>
-                                <option value="Hambantota">Hambantota</option>
-                                <option value="Anuradhapura">Anuradhapura</option>
-                                <option value="Polonnaruwa">Polonnaruwa</option>
-                                <option value="Chilaw">Chilaw</option>
-                            </select>
-                        </div>
-                        <div class="form-group">
-                            <label for="voiceCheckInDate">
-                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                    <rect x="3" y="4" width="18" height="18" rx="2" ry="2"/>
-                                    <line x1="16" y1="2" x2="16" y2="6"/>
-                                    <line x1="8" y1="2" x2="8" y2="6"/>
-                                    <line x1="3" y1="10" x2="21" y2="10"/>
-                                </svg>
-                                Check-in
-                            </label>
-                            <input type="date" id="voiceCheckInDate" class="form-input">
-                        </div>
-                        <div class="form-group">
-                            <label for="voiceCheckOutDate">
-                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                    <rect x="3" y="4" width="18" height="18" rx="2" ry="2"/>
-                                    <line x1="16" y1="2" x2="16" y2="6"/>
-                                    <line x1="8" y1="2" x2="8" y2="6"/>
-                                    <line x1="3" y1="10" x2="21" y2="10"/>
-                                </svg>
-                                Check-out
-                            </label>
-                            <input type="date" id="voiceCheckOutDate" class="form-input">
-                        </div>
-                    </div>
-                    <div class="form-group" style="margin-top: 1rem;">
-                        <label for="voicePreferencesInput">
-                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                <path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/>
-                                <line x1="7" y1="7" x2="7.01" y2="7"/>
-                            </svg>
-                            Preferences (optional)
-                        </label>
-                        <input type="text" id="voicePreferencesInput" class="form-input" placeholder="e.g., luxury with pool, family-friendly, near beach...">
-                    </div>
-                    <button type="button" class="start-search-btn" id="voiceStartSearchBtn">
-                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <circle cx="11" cy="11" r="8"/>
-                            <path d="m21 21-4.35-4.35"/>
+                <!-- orb -->
+                <div class="orb-scene" id="orbScene">
+                    <button type="button" id="orbBtn" class="orb-btn" disabled>
+                        <svg id="orbIcon" class="orb-icon" width="52" height="52" viewBox="0 0 24 24"
+                             fill="none" stroke="currentColor" stroke-width="1.6">
+                            <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
+                            <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
+                            <line x1="12" y1="19" x2="12" y2="23"/>
+                            <line x1="8" y1="23" x2="16" y2="23"/>
                         </svg>
-                        Start Search
                     </button>
+                    <div class="orb-ring orb-ring-1"></div>
+                    <div class="orb-ring orb-ring-2"></div>
                 </div>
 
-                <!-- Search Info Bar (shown after live prices search) -->
-                <div class="voice-search-info glass-morphism" id="voiceSearchInfo" style="display: none;"></div>
+                <p class="orb-label" id="orbLabel">Connecting…</p>
+                <button type="button" id="endBtn" class="end-btn">End conversation</button>
 
-                <!-- Voice Visualizer -->
-                <div class="voice-visualizer glass-morphism">
-                    <div class="visualizer-content">
-                        <div class="mic-button-container">
-                            <button type="button" id="micButton" class="mic-button" disabled>
-                                <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                    <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
-                                    <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
-                                    <line x1="12" y1="19" x2="12" y2="23"/>
-                                    <line x1="8" y1="23" x2="16" y2="23"/>
-                                </svg>
-                            </button>
-                            <p class="mic-status" id="micStatus">Connecting...</p>
-                        </div>
-                        
-                        <div class="audio-waves" id="audioWaves">
-                            <div class="wave"></div>
-                            <div class="wave"></div>
-                            <div class="wave"></div>
-                            <div class="wave"></div>
-                            <div class="wave"></div>
-                            <div class="wave"></div>
-                            <div class="wave"></div>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Transcript -->
-                <div class="transcript-container glass-morphism">
-                    <div class="transcript-header">
+                <!-- transcript -->
+                <div class="v-transcript">
+                    <div class="v-transcript-head">
                         <h3>Conversation</h3>
-                        <button type="button" onclick="clearTranscript()" class="clear-button">Clear</button>
+                        <button class="v-clear-btn" onclick="clearTranscript()">Clear</button>
                     </div>
-                    <div class="transcript-content" id="transcript">
-                        <div class="transcript-message assistant">
-                            <strong>Assistant:</strong> Hi! Click the microphone and speak to start searching for hotels.
+                    <div class="v-transcript-body" id="transcript">
+                        <div class="vmsg vmsg-assistant">
+                            <div class="vmsg-avatar">AI</div>
+                            <div class="vmsg-body">
+                                <div class="vmsg-role">Assistant</div>
+                                <div class="vmsg-text">Tap the mic and speak to find hotels. I'll listen and respond automatically.</div>
+                            </div>
                         </div>
                     </div>
                 </div>
 
-                <!-- Instructions -->
-                <div class="voice-instructions glass-morphism">
-                    <div style="background: #ff6b35; color: white; padding: 0.75rem; border-radius: 8px; margin-bottom: 1rem;">
-                        <strong>🔧 DEBUG MODE:</strong> After the page refreshes, open console and type: <code style="background: rgba(0,0,0,0.2); padding: 2px 6px; border-radius: 3px;">viewDebugLogs()</code> to see what happened
-                    </div>
-                    <h4>📌 How to use:</h4>
-                    <ol>
-                        <li><strong>Standard mode:</strong> Click the mic and ask about hotels — get top 3 picks</li>
-                        <li><strong>Live Prices:</strong> Select dates & city, then use voice to rank real-time results</li>
-                        <li>Wait for the AI to respond with voice and hotel cards</li>
-                        <li>Click the mic again to refine or ask something new</li>
-                    </ol>
-                    <p class="voice-note">💡 <strong>Tip:</strong> Try saying "Show me luxury hotels in Colombo" or "Find budget-friendly beach resorts"</p>
-                </div>
             </div>
         </div>
     </main>

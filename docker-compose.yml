@@ -1,0 +1,23 @@
+# Run the Pipecat bot container alongside the Windows-hosted FastAPI.
+#
+# Usage:
+#   docker compose up --build bot
+#
+# The FastAPI app (port 8000) is started separately on Windows:
+#   uvicorn backend.main:app --reload --port 8000
+#
+# Make sure backend/.env contains DAILY_API_KEY and DAILY_BOT_URL=http://localhost:8100
+
+services:
+  bot:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile.bot
+    ports:
+      - "8100:8100"
+    env_file:
+      - backend/.env
+    volumes:
+      # Mount the entire project so the bot can import backend modules
+      - .:/app
+    restart: unless-stopped

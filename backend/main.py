@@ -1,7 +1,7 @@
 import warnings
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from backend.routers import health, rapidapi_insights, localdb_insights, voice, chat
+from backend.routers import health, rapidapi_insights, localdb_insights, voice, chat, voice_room
 
 
 # signore pydantic warnings about field names that match BaseModel attributes by google genai library
@@ -21,5 +21,6 @@ app.add_middleware(
 app.include_router(health.router) # health check endpoint (GET /health)
 app.include_router(rapidapi_insights.router) # rapidapi insights endpoint, takes search parameters + user request and returns LLM-ranked hotel insights
 app.include_router(localdb_insights.router) # local db insights endpoint, takes exploratory search params and returns local DB hotel results
-app.include_router(voice.router) # voice websocket endpoint (WS /voice/stream)
+app.include_router(voice.router) # voice websocket endpoint (WS /voice/stream) - kept as fallback
+app.include_router(voice_room.router) # WebRTC voice room endpoint (POST /voice/room)
 app.include_router(chat.router) # text endpoint (POST /chat)

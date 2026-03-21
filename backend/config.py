@@ -35,6 +35,9 @@ REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
 REDIS_SESSION_TTL_SECONDS = int(os.getenv("REDIS_SESSION_TTL_SECONDS", "1800"))
 REDIS_MAX_TURNS = int(os.getenv("REDIS_MAX_TURNS", "8"))
 
+DAILY_API_KEY = os.getenv("DAILY_API_KEY", "")
+DAILY_BOT_URL = os.getenv("DAILY_BOT_URL", "http://localhost:8100")
+
 
 if not RAPIDAPI_KEY or not RAPIDAPI_HOST:
     raise RuntimeError(f"RapidAPI creds missing. Loaded from: {ENV_PATH}")
