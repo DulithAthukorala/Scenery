@@ -7,8 +7,10 @@ const SESSION_KEY       = 'scenery_session_id';
 // ═══════════════════════════════════════════════
 //  State
 // ═══════════════════════════════════════════════
-let call            = null;   // Daily call object
-let sessionActive   = false;  // are we in a voice session?
+let call            = null;
+let callReady       = false;
+let connecting      = false;
+let sessionActive   = false;
 let lastFinalText   = '';
 
 // ═══════════════════════════════════════════════
@@ -26,7 +28,7 @@ const transcript= document.getElementById('transcript');
 //  Boot
 // ═══════════════════════════════════════════════
 document.addEventListener('DOMContentLoaded', () => {
-    initConnection();            // auto-connect so orb is ready immediately
+    initConnection();
     orbBtn.addEventListener('click', handleOrbClick);
     endBtn.addEventListener('click', endSession);
 });
@@ -35,16 +37,33 @@ document.addEventListener('DOMContentLoaded', () => {
 //  Connection — create Daily room & join
 // ═══════════════════════════════════════════════
 async function initConnection() {
-    setStatus('connecting', 'Connecting…');
+    if (connecting) return;
+    connecting = true;
+    setStatus('connecting', 'Connecting');
     setOrbState('idle');
 
-    // Tear down any stale call
-    if (call) {
-        try { await call.destroy(); } catch (_) {}
-        call = null;
-    }
-
     try {
+        if (!callReady) {
+            call = window.DailyIframe.createCallObject({
+                audioSource: true,
+                videoSource: false,
+                subscribeToTracksAutomatically: true,
+            });
+            call.on('joined-meeting',        onJoined);
+            call.on('left-meeting',          onLeft);
+            call.on('error',                 onError);
+            call.on('app-message',           onAppMessage);
+            call.on('active-speaker-change', onActiveSpeaker);
+            call.on('track-started',         onTrackStarted);
+            callReady = true;
+        }
+
+        const state = call.meetingState();
+        if (state === 'joined-meeting' || state === 'joining-meeting') {
+            await call.leave();
+            return;
+        }
+
         const resp = await fetch(`${API_BASE}/voice/room`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -55,28 +74,15 @@ async function initConnection() {
             throw new Error(`Room error (${resp.status}): ${body}`);
         }
         const { room_url, token } = await resp.json();
-
-        call = window.DailyIframe.createCallObject({
-            audioSource: true,
-            videoSource: false,
-            subscribeToTracksAutomatically: true,
-        });
-
-        call.on('joined-meeting',        onJoined);
-        call.on('left-meeting',          onLeft);
-        call.on('error',                 onError);
-        call.on('app-message',           onAppMessage);
-        call.on('active-speaker-change', onActiveSpeaker);
-        call.on('track-started',         onTrackStarted);
-        call.on('participant-joined',    onParticipantJoined);
-
         await call.join({ url: room_url, token });
 
     } catch (err) {
         console.error('[Voice] initConnection error:', err);
-        setStatus('error', 'Failed — retrying…');
+        setStatus('error', 'Retrying');
         setOrbState('idle');
         setTimeout(initConnection, 4000);
+    } finally {
+        connecting = false;
     }
 }
 
@@ -85,7 +91,6 @@ async function initConnection() {
 // ═══════════════════════════════════════════════
 function onJoined() {
     setStatus('connected', 'Ready');
-    // Start muted; user taps orb to begin speaking
     call.setLocalAudio(false);
     setOrbState('idle');
     orbBtn.disabled = false;
@@ -94,66 +99,51 @@ function onJoined() {
 
 function onLeft() {
     sessionActive = false;
-    call = null;
-    setStatus('disconnected', 'Disconnected');
+    setStatus('disconnected', 'Reconnecting');
     setOrbState('idle');
     orbBtn.disabled = true;
-    orbLabel.textContent = 'Reconnecting…';
+    orbLabel.textContent = 'Reconnecting';
     endBtn.style.display = 'none';
     setTimeout(initConnection, 2500);
 }
 
 function onError(evt) {
     console.error('[Daily] error', evt);
-    const msg = evt?.errorMsg || evt?.error?.message || JSON.stringify(evt);
-    setStatus('error', 'Error — retrying…');
-    addMsg('system', msg);
+    setStatus('error', 'Retrying');
     endBtn.style.display = 'none';
     sessionActive = false;
-    if (call) { try { call.destroy(); } catch(_){} call = null; }
+    if (call) { call.leave().catch(() => {}); }
     setTimeout(initConnection, 3000);
 }
 
-// ─── Audio track playback ─────────────────────────────────────────────────────
-// DailyIframe.createCallObject() (headless) does NOT autoplay remote tracks.
-// We must attach them to an <audio> element manually.
-const audioElements = {};   // participantId → <audio>
+// ─── Audio track playback ───────────────────────
+const audioElements = {};
 
 function onTrackStarted(evt) {
     if (evt.track.kind !== 'audio') return;
-    if (evt.participant.local) return;          // don't play our own mic back
+    if (evt.participant.local) return;
     const pid = evt.participant.session_id;
-    console.log('[Daily] track-started for participant', pid);
     if (!audioElements[pid]) {
-        const el = new Audio();
+        const el = document.createElement('audio');
         el.autoplay = true;
+        el.style.display = 'none';
+        document.body.appendChild(el);
         audioElements[pid] = el;
     }
     const stream = new MediaStream([evt.track]);
     audioElements[pid].srcObject = stream;
-    audioElements[pid].play().catch(e => console.warn('[Audio] play() blocked:', e));
-}
-
-function onParticipantJoined(evt) {
-    // Existing tracks might fire before track-started if the participant is
-    // already in the room when we join — subscribe explicitly just in case.
-    const pid = evt.participant.session_id;
-    if (!evt.participant.local && call) {
-        call.updateParticipant(pid, { setSubscribedTracks: { audio: true, video: false } })
-            .catch(() => {});   // best-effort; not all SDK versions support this
-    }
+    audioElements[pid].play().catch(() => {});
 }
 
 function onActiveSpeaker(evt) {
-    // Detect when the Pipecat bot (non-local) is speaking
     const activePeer = evt?.activeSpeaker?.peerId;
     const localId    = call?.participants()?.local?.session_id;
     if (activePeer && activePeer !== localId) {
         setOrbState('speaking');
-        orbLabel.textContent = 'Speaking…';
+        orbLabel.textContent = 'Speaking';
     } else if (sessionActive) {
         setOrbState('listening');
-        orbLabel.textContent = 'Listening…';
+        orbLabel.textContent = 'Listening';
     }
 }
 
@@ -179,7 +169,7 @@ function onAppMessage(evt) {
 
         case 'processing':
             setOrbState('processing');
-            orbLabel.textContent = 'Thinking…';
+            orbLabel.textContent = 'Thinking';
             break;
 
         case 'assistant_response': {
@@ -194,7 +184,7 @@ function onAppMessage(evt) {
 
             if (sessionActive) {
                 setOrbState('listening');
-                orbLabel.textContent = 'Listening…';
+                orbLabel.textContent = 'Listening';
             }
             break;
         }
@@ -203,7 +193,7 @@ function onAppMessage(evt) {
             lastFinalText = '';
             if (sessionActive) {
                 setOrbState('listening');
-                orbLabel.textContent = 'Listening…';
+                orbLabel.textContent = 'Listening';
             }
             break;
 
@@ -211,26 +201,28 @@ function onAppMessage(evt) {
             addMsg('system', data.message || 'Unknown error');
             if (sessionActive) {
                 setOrbState('listening');
-                orbLabel.textContent = 'Listening…';
+                orbLabel.textContent = 'Listening';
             }
             break;
     }
 }
 
 // ═══════════════════════════════════════════════
-//  Orb button — start / (managed by endBtn to stop)
+//  Orb button
 // ═══════════════════════════════════════════════
 function handleOrbClick() {
     if (!call || call.meetingState() !== 'joined-meeting') return;
     if (!sessionActive) startSession();
-    // Once active, the orb is just visual — end via endBtn
 }
 
 function startSession() {
     sessionActive = true;
-    call.setLocalAudio(true);   // unmute — keep on for the whole session
+    call.setLocalAudio(true);
+    Object.entries(audioElements).forEach(([, el]) => {
+        el.play().catch(() => {});
+    });
     setOrbState('listening');
-    orbLabel.textContent = 'Listening…';
+    orbLabel.textContent = 'Listening';
     endBtn.style.display = 'inline-block';
 }
 
@@ -254,8 +246,7 @@ const MIC_ICON = `<path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"
 const SPIN_ICON = `<path d="M21 12a9 9 0 1 1-6.219-8.56"/>`;
 
 function setOrbState(state) {
-    // state: 'idle' | 'listening' | 'processing' | 'speaking'
-    orbBtn.dataset.state  = state;
+    orbBtn.dataset.state   = state;
     orbScene.dataset.state = state;
     orbLabel.dataset.state = state;
 
@@ -265,10 +256,7 @@ function setOrbState(state) {
 
 function setStatus(type, text) {
     statusText.textContent = text;
-    statusDot.style.background =
-        type === 'connected'    ? 'var(--success-gradient)'   :
-        type === 'error'        ? 'var(--secondary-gradient)' :
-                                  'var(--text-tertiary)';
+    statusDot.className = 'status-dot' + (type === 'connected' ? ' connected' : type === 'error' ? ' error' : '');
 }
 
 // ═══════════════════════════════════════════════
@@ -301,10 +289,11 @@ function addMsg(role, text) {
     const el = document.createElement('div');
     el.className = `vmsg vmsg-${role}`;
     const avatar = role === 'user' ? 'You' : role === 'assistant' ? 'AI' : '!';
+    const label  = role === 'user' ? 'You' : role === 'assistant' ? 'Scenery' : 'System';
     el.innerHTML = `
         <div class="vmsg-avatar">${avatar}</div>
         <div class="vmsg-body">
-            <div class="vmsg-role">${role === 'user' ? 'You' : role === 'assistant' ? 'Assistant' : 'System'}</div>
+            <div class="vmsg-role">${label}</div>
             <div class="vmsg-text">${escHtml(text)}</div>
         </div>`;
     transcript.appendChild(el);
@@ -316,9 +305,9 @@ function addHotels(hotels) {
     el.className = 'vmsg vmsg-assistant';
     let cards = '<div class="v-hotels">';
     hotels.slice(0, 5).forEach(h => {
-        const rating = h.rating ? `⭐ ${h.rating}` : '';
-        const loc    = h.location ? `📍 ${escHtml(h.location)}` : '';
-        const meta   = [rating, loc].filter(Boolean).join('  ');
+        const rating = h.rating ? `<span style="color:#d97706">&#9733;</span> ${h.rating}` : '';
+        const loc    = h.location ? escHtml(h.location) : '';
+        const meta   = [rating, loc].filter(Boolean).join(' &middot; ');
         cards += `
             <div class="v-hotel-card">
                 <div>
@@ -341,8 +330,8 @@ function clearTranscript() {
         <div class="vmsg vmsg-assistant">
             <div class="vmsg-avatar">AI</div>
             <div class="vmsg-body">
-                <div class="vmsg-role">Assistant</div>
-                <div class="vmsg-text">Tap the mic and speak to find hotels.</div>
+                <div class="vmsg-role">Scenery</div>
+                <div class="vmsg-text">Tap the microphone and ask me about hotels in Sri Lanka.</div>
             </div>
         </div>`;
 }
@@ -375,5 +364,5 @@ function getSessionId() {
 }
 
 window.addEventListener('beforeunload', () => {
-    if (call) call.leave().catch(() => {});
+    if (call) call.destroy().catch?.(() => {});
 });
